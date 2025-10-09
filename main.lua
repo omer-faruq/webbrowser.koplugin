@@ -16,9 +16,11 @@ local socketutil = require("socketutil")
 local ltn12 = require("ltn12")
 local _ = require("gettext")
 local NetworkMgr = require("ui/network/manager")
+local DocumentRegistry = require("document/documentregistry")
 
 local MarkdownViewer = require("webbrowser_markdown_viewer")
 local Utils = require("webbrowser_utils")
+local MuPDFRenderer = require("webbrowser_mupdf_renderer")
 local config_loaded, config_result = pcall(require, "webbrowser_configuration")
 local CONFIG = config_loaded and config_result or {}
 local CONFIG_MISSING = not config_loaded
@@ -39,9 +41,204 @@ local WebBrowser = WidgetContainer:extend{
 
 local DEFAULT_TIMEOUT = 20
 local DEFAULT_MAXTIME = 60
+local fetch_markdown
 
 local function trim_text(value)
     return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+function WebBrowser:shouldDownloadImages()
+    local value = CONFIG.download_images
+    if type(value) == "boolean" then
+        return value
+    end
+    if type(value) == "string" then
+        local normalized = value:lower()
+        if normalized == "false" or normalized == "0" or normalized == "no" then
+            return false
+        end
+        if normalized == "true" or normalized == "1" or normalized == "yes" then
+            return true
+        end
+    end
+    return true
+end
+
+function WebBrowser:normalizeUrlInput(input)
+    local trimmed = trim_text(input or "")
+    if trimmed == "" then
+        return nil
+    end
+    if not trimmed:match("^[%a][%w%+%.-]*://") then
+        trimmed = "https://" .. trimmed
+    end
+    return trimmed
+end
+
+function WebBrowser:getRenderType()
+    local render_type = CONFIG.render_type
+    if type(render_type) == "string" then
+        render_type = render_type:lower()
+    end
+    if render_type == "mupdf" then
+        return "mupdf"
+    end
+    return "markdown"
+end
+
+function WebBrowser:isMarkdownRender()
+    return self:getRenderType() == "markdown"
+end
+
+function WebBrowser:isMuPDFRender()
+    return self:getRenderType() == "mupdf"
+end
+
+function WebBrowser:getMuPDFRenderer()
+    if not self.mupdf_renderer then
+        self.mupdf_renderer = MuPDFRenderer:new {
+            keep_old_files = self:shouldKeepOldWebsiteFiles(),
+            download_images = self:shouldDownloadImages(),
+        }
+    end
+    return self.mupdf_renderer
+end
+
+function WebBrowser:shouldKeepOldWebsiteFiles()
+    local value = CONFIG.keep_old_website_files
+    if type(value) == "boolean" then
+        return value
+    end
+    if type(value) == "string" then
+        local normalized = value:lower()
+        return normalized == "true" or normalized == "1" or normalized == "yes"
+    end
+    return false
+end
+
+function WebBrowser:ensureMuPDFLinkHandler()
+    if not self:isMuPDFRender() then
+        return
+    end
+    if self.mu_pdf_link_handler_registered then
+        return
+    end
+
+    UIManager:nextTick(function()
+        if not self:isMuPDFRender() then
+            return
+        end
+        if not (self.ui and self.ui.link and self.ui.link.addToExternalLinkDialog) then
+            self.mu_pdf_link_handler_registered = false
+            return
+        end
+
+        self.ui.link:addToExternalLinkDialog("35_open_here_webbrowser_mupdf", function(external_dialog, link_url)
+            return {
+                text = _("Open here (MuPDF)"),
+                callback = function()
+                    UIManager:close(external_dialog.external_link_dialog)
+                    local target_url = link_url
+                    if type(target_url) ~= "string" or not target_url:match("^https?://") then
+                        return
+                    end
+                    NetworkMgr:runWhenOnline(function()
+                        self:loadMuPDFUrl(target_url, false, _("Loading page…"))
+                    end)
+                end,
+                show_in_dialog_func = function()
+                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and self:isMuPDFRender()
+                end,
+            }
+        end)
+
+        self.mu_pdf_link_handler_registered = true
+    end)
+end
+
+function WebBrowser:openMuPDFDocument(file_path)
+    if type(file_path) ~= "string" or file_path == "" then
+        return
+    end
+    local provider = DocumentRegistry:getProviderFromKey("mupdf")
+    if self.ui.document then
+        self.ui:showReader(file_path, provider, true, true)
+    else
+        self.ui:openFile(file_path, provider)
+    end
+end
+
+function WebBrowser:loadMuPDFUrl(url, reopen_results, loading_text)
+    if type(url) ~= "string" or url == "" then
+        self:handleFetchError(_("Invalid URL."), reopen_results)
+        return false
+    end
+
+    self:ensureMuPDFLinkHandler()
+
+    local info
+    if loading_text and loading_text ~= "" then
+        info = InfoMessage:new {
+            text = loading_text,
+            timeout = 0,
+        }
+        UIManager:show(info)
+    end
+
+    local ok, result_or_err = self:getMuPDFRenderer():fetchAndStore(url)
+
+    if info then
+        UIManager:close(info)
+    end
+
+    if not ok then
+        self:handleFetchError(result_or_err, reopen_results)
+        return false
+    end
+
+    self:openMuPDFDocument(result_or_err)
+    return true
+end
+
+function WebBrowser:openDirectUrl(raw_input)
+    local normalized = self:normalizeUrlInput(raw_input)
+    if not normalized then
+        UIManager:show(InfoMessage:new {
+            text = _("Please enter a valid URL."),
+            timeout = 2,
+        })
+        return
+    end
+
+    NetworkMgr:runWhenOnline(function()
+        if self:isMuPDFRender() then
+            self:loadMuPDFUrl(normalized, false, _("Loading page…"))
+            return
+        end
+
+        local gateway_url = Utils.ensure_markdown_gateway(normalized)
+        local info = InfoMessage:new {
+            text = _("Loading page…"),
+            timeout = 0,
+        }
+        UIManager:show(info)
+
+        local markdown, err = fetch_markdown(gateway_url)
+        UIManager:close(info)
+
+        if not markdown then
+            self:handleFetchError(err, false)
+            return
+        end
+
+        self:showMarkdownPage({
+            title = normalized,
+            source_url = normalized,
+            gateway_url = gateway_url,
+            markdown = markdown,
+            source_context = "direct",
+        }, true, true)
+    end)
 end
 
 function WebBrowser:getSelectedEngineName()
@@ -106,7 +303,7 @@ function WebBrowser:getSearchEngineDisplayName()
     return "DuckDuckGo"
 end
 
-local function fetch_markdown(url)
+local fetch_markdown = function(url)
     local response_chunks = {}
     socketutil:set_timeout(DEFAULT_TIMEOUT, DEFAULT_MAXTIME)
     local request = {
@@ -154,6 +351,11 @@ function WebBrowser:init()
     self.bookmarks_store = BookmarksStore:new()
     self.bookmarks_dialog = nil
     self.last_results = nil
+    self.mupdf_renderer = nil
+    self.mu_pdf_link_handler_registered = false
+    if self:isMuPDFRender() then
+        self:ensureMuPDFLinkHandler()
+    end
 end
 
 function WebBrowser:getHomeDirectory()
@@ -305,6 +507,24 @@ function WebBrowser:showSearchDialog()
                     end,
                 },
                 {
+                    text = _("Go"),
+                    callback = function()
+                        local url_input = self.search_dialog:getInputText() or ""
+                        url_input = trim_text(url_input)
+                        if url_input == "" then
+                            UIManager:show(InfoMessage:new {
+                                text = _("Please enter a URL."),
+                                timeout = 2,
+                            })
+                            return
+                        end
+
+                        UIManager:close(self.search_dialog)
+                        self.search_dialog = nil
+                        self:openDirectUrl(url_input)
+                    end,
+                },
+                {
                     text = _("Bookmarks"),
                     callback = function()
                         UIManager:close(self.search_dialog)
@@ -368,8 +588,23 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
                 sub_text = result.domain
             end
         end
+
+        local display_text = result.title or ""
+        local raw_url = result.url or result.source_url or result.gateway_url
+        local normalized_url = raw_url and Utils.decode_result_url(raw_url)
+        normalized_url = normalized_url and trim_text(normalized_url) or ""
+        if normalized_url ~= "" then
+            if display_text and display_text ~= "" then
+                display_text = string.format("%s — %s", display_text, normalized_url)
+            else
+                display_text = normalized_url
+            end
+        elseif not display_text or display_text == "" then
+            display_text = raw_url or ""
+        end
+
         table.insert(item_table, {
-            text = result.title,
+            text = display_text,
             sub_text = sub_text,
             callback = function()
                 self:openResult(result)
@@ -390,6 +625,34 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
     UIManager:show(self.results_menu)
 end
 
+function WebBrowser:openResultMarkdown(result)
+    local gateway_url = Utils.ensure_markdown_gateway(result.url)
+    local content, err = fetch_markdown(gateway_url)
+    if not content then
+        self:handleFetchError(err, true)
+        return
+    end
+
+    local page = {
+        title = result.title,
+        source_url = result.url,
+        gateway_url = gateway_url,
+        markdown = content,
+        source_context = "search",
+    }
+    self:showMarkdownPage(page, true, true)
+end
+
+function WebBrowser:openResultMuPDF(result)
+    if not result then
+        self:handleFetchError(_("Invalid result."), true)
+        return
+    end
+    local raw_url = result.url or result.gateway_url or result.source_url
+    raw_url = Utils.decode_result_url(raw_url)
+    self:loadMuPDFUrl(raw_url, true, _("Loading page…"))
+end
+
 function WebBrowser:openResult(result)
     NetworkMgr:runWhenOnline(function()
         if self.results_menu then
@@ -397,21 +660,12 @@ function WebBrowser:openResult(result)
             self.results_menu = nil
         end
 
-        local gateway_url = Utils.ensure_markdown_gateway(result.url)
-        local content, err = fetch_markdown(gateway_url)
-        if not content then
-            self:handleFetchError(err, true)
+        if self:isMuPDFRender() then
+            self:openResultMuPDF(result)
             return
         end
 
-        local page = {
-            title = result.title,
-            source_url = result.url,
-            gateway_url = gateway_url,
-            markdown = content,
-            source_context = "search",
-        }
-        self:showMarkdownPage(page, true, true)
+        self:openResultMarkdown(result)
     end)
 end
 
@@ -504,6 +758,9 @@ function WebBrowser:onBack()
 end
 
 function WebBrowser:onLinkTapped(link)
+    if not self:isMarkdownRender() then
+        return
+    end
     if type(link) ~= "string" then
         return
     end
@@ -821,9 +1078,15 @@ function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
         end
     end
 
-    local gateway_url = Utils.ensure_markdown_gateway(url)
+    local direct_url = Utils.decode_result_url(url) or url
 
     NetworkMgr:runWhenOnline(function()
+        if self:isMuPDFRender() then
+            self:loadMuPDFUrl(direct_url, false, _("Loading bookmark…"))
+            return
+        end
+
+        local gateway_url = Utils.ensure_markdown_gateway(url)
         local info = InfoMessage:new {
             text = _("Loading bookmark…"),
             timeout = 0,

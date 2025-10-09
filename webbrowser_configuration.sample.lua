@@ -1,6 +1,6 @@
 return {
-    engine = "brave_api",
-    save_to_directory = nil,
+    engine = "brave_api", -- options: "duckduckgo", "brave_api"
+
     engines = {
         duckduckgo = {
             name = "duckduckgo",
@@ -22,4 +22,10 @@ return {
             page_size = 20,
         },
     },
+
+    render_type = "mupdf", -- options: "mupdf", "markdown"
+    save_to_directory = nil, -- for markdown render_type. : when using the save button it will save into this directory.
+    keep_old_website_files = false, -- for mupdf render_type.
+    download_images = false, --for mupdf render_type.
+
 }

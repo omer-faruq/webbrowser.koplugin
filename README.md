@@ -5,7 +5,8 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 ## Features
 - **Search dialog**: Launch queries directly from KOReader using a custom dialog tailored for e-ink interaction.
 - **Curated results list**: Browse plaintext summaries before opening pages, reducing bandwidth and rendering overhead.
-- **Markdown reader**: View fetched articles in the built-in Markdown viewer with support for internal navigation and link following.
+- **Dual rendering modes**: Choose between the original Markdown viewer or the new MuPDF HTML renderer depending on your needs.
+- **Direct URL navigation**: Use the Go button in the search dialog to open any URL without performing a search first.
 - **Bookmark manager**: Store, organize, reopen, and delete frequently referenced pages inside KOReader.
 - **Offline-ready saves**: Export rendered Markdown to local storage for later reading without connectivity.
 
@@ -23,9 +24,12 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 - **Configure the plugin**: Store the issued key in `plugins/webbrowser.koplugin/webbrowser_configuration.lua` under `engines.brave_api.api_key` (or your preferred secure storage method).
 - **Free-tier limits**: 1 request per second and up to 2,000 queries per month. Consider caching or using DuckDuckGo for lighter usage to stay within quota.
 
+## Rendering Modes
+- **Markdown**: Fetches content through the Jina AI Markdown gateway and displays it in the lightweight Markdown viewer.
+- **MuPDF**: Downloads the raw HTML (plus assets) to a temporary cache and opens it through MuPDF for a closer-to-original layout. When in MuPDF mode, the "Open here (MuPDF)" action remains available in KOReader's external link dialog so you can continue browsing in place.
+
 ## Limitations
-- **Markdown-only rendering**: The plugin displays the Markdown-converted view of each page instead of the full original layout.
-- **Conversion rate cap**: The Jina AI gateway currently allows opening up to 20 pages per minute; exceeding this limit may result in temporary rate limiting.
+- **Markdown gateway rate cap**: The Jina AI gateway currently allows opening up to 20 pages per minute; exceeding this limit may result in temporary rate limiting.
 
 ## Getting Started
 - **Download & rename**: Clone or download this repository and rename the top-level folder to `webbrowser.koplugin/`.
@@ -42,12 +46,14 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 - **Save for later**: Use the save action in the viewer to archive the Markdown file in your preferred directory.
 
 ## Tips
-- **Stay online**: Searching and fetching Markdown requires an active network connection.
-- **Mind the rate limit**: When quickly opening multiple pages, pause briefly to avoid hitting the conversion cap.
+- **Stay online**: Searching, fetching Markdown, and retrieving MuPDF assets require an active network connection.
+- **Mind the rate limit**: When quickly opening multiple Markdown pages, pause briefly to avoid hitting the conversion cap.
 - **Use bookmarks for caching**: Opening a saved bookmark with stored Markdown bypasses another conversion request, helping conserve API usage.
+- **Keep MuPDF cache tidy**: Disable the `keep_old_website_files` option if you prefer to discard previously downloaded MuPDF pages automatically.
 
 ## Credits
 - **Built with Windsurf**: This KOReader web browser plugin was implemented through a Windsurf-assisted development workflow.
+- **MuPDF workflow inspiration**: HTML-to-MuPDF handling was adapted from [Frenzie's](https://github.com/Frenzie) repository, many thanks!
 
 ## License
 - **GPL-3.0**: Distributed under the KOReader project license. See the root `LICENSE` file for full terms.
