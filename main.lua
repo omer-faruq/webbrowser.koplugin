@@ -19,7 +19,9 @@ local NetworkMgr = require("ui/network/manager")
 
 local MarkdownViewer = require("webbrowser_markdown_viewer")
 local Utils = require("webbrowser_utils")
-local CONFIG = require("webbrowser_configuration")
+local config_loaded, config_result = pcall(require, "webbrowser_configuration")
+local CONFIG = config_loaded and config_result or {}
+local CONFIG_MISSING = not config_loaded
 local BookmarksStore = require("webbrowser_bookmarks")
 local Random = require("random")
 
@@ -257,6 +259,14 @@ function WebBrowser:onShowWebBrowser()
 end
 
 function WebBrowser:showSearchDialog()
+    if CONFIG_MISSING then
+        UIManager:show(InfoMessage:new {
+            text = _("Web browser configuration file not found. Copy 'webbrowser_configuration.sample.lua' to 'webbrowser_configuration.lua' inside the webbrowser plugin folder."),
+            timeout = 10,
+        })
+        return
+    end
+
     if self.search_dialog and self.search_dialog.dialog_open then
         return
     end
@@ -381,26 +391,28 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
 end
 
 function WebBrowser:openResult(result)
-    if self.results_menu then
-        UIManager:close(self.results_menu)
-        self.results_menu = nil
-    end
+    NetworkMgr:runWhenOnline(function()
+        if self.results_menu then
+            UIManager:close(self.results_menu)
+            self.results_menu = nil
+        end
 
-    local gateway_url = Utils.ensure_markdown_gateway(result.url)
-    local content, err = fetch_markdown(gateway_url)
-    if not content then
-        self:handleFetchError(err, true)
-        return
-    end
+        local gateway_url = Utils.ensure_markdown_gateway(result.url)
+        local content, err = fetch_markdown(gateway_url)
+        if not content then
+            self:handleFetchError(err, true)
+            return
+        end
 
-    local page = {
-        title = result.title,
-        source_url = result.url,
-        gateway_url = gateway_url,
-        markdown = content,
-        source_context = "search",
-    }
-    self:showMarkdownPage(page, true, true)
+        local page = {
+            title = result.title,
+            source_url = result.url,
+            gateway_url = gateway_url,
+            markdown = content,
+            source_context = "search",
+        }
+        self:showMarkdownPage(page, true, true)
+    end)
 end
 
 function WebBrowser:showMarkdownPage(page, push_history, refresh_scroll)
@@ -510,20 +522,23 @@ function WebBrowser:onLinkTapped(link)
     end
 
     local gateway_url = Utils.ensure_markdown_gateway(absolute)
-    local content, err = fetch_markdown(gateway_url)
-    if not content then
-        self:handleFetchError(err, false)
-        return
-    end
 
-    local page = {
-        title = absolute,
-        source_url = absolute,
-        gateway_url = gateway_url,
-        markdown = content,
-        source_context = self.current_page and self.current_page.source_context,
-    }
-    self:showMarkdownPage(page, true, true)
+    NetworkMgr:runWhenOnline(function()
+        local content, err = fetch_markdown(gateway_url)
+        if not content then
+            self:handleFetchError(err, false)
+            return
+        end
+
+        local page = {
+            title = absolute,
+            source_url = absolute,
+            gateway_url = gateway_url,
+            markdown = content,
+            source_context = self.current_page and self.current_page.source_context,
+        }
+        self:showMarkdownPage(page, true, true)
+    end)
 end
 
 function WebBrowser:onSaveCurrentPage()
@@ -808,27 +823,29 @@ function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
 
     local gateway_url = Utils.ensure_markdown_gateway(url)
 
-    local info = InfoMessage:new {
-        text = _("Loading bookmark…"),
-        timeout = 0,
-    }
-    UIManager:show(info)
+    NetworkMgr:runWhenOnline(function()
+        local info = InfoMessage:new {
+            text = _("Loading bookmark…"),
+            timeout = 0,
+        }
+        UIManager:show(info)
 
-    local markdown, err = fetch_markdown(gateway_url)
-    UIManager:close(info)
+        local markdown, err = fetch_markdown(gateway_url)
+        UIManager:close(info)
 
-    if not markdown then
-        self:handleFetchError(err, false)
-        return
-    end
+        if not markdown then
+            self:handleFetchError(err, false)
+            return
+        end
 
-    self:showMarkdownPage({
-        title = title,
-        source_url = url,
-        gateway_url = gateway_url,
-        markdown = markdown,
-        source_context = "bookmarks",
-    }, true, true)
+        self:showMarkdownPage({
+            title = title,
+            source_url = url,
+            gateway_url = gateway_url,
+            markdown = markdown,
+            source_context = "bookmarks",
+        }, true, true)
+    end)
 end
 
 function WebBrowser:showBookmarksDialog()
