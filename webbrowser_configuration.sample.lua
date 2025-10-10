@@ -25,7 +25,7 @@ return {
 
     render_type = "mupdf", -- options: "mupdf", "markdown"
     save_to_directory = nil, -- for markdown render_type. : when using the save button it will save into this directory.
-    keep_old_website_files = false, -- for mupdf render_type.
+    keep_old_website_files = true, -- for mupdf render_type.
     download_images = false, --for mupdf render_type.
 
 }

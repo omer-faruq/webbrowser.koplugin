@@ -265,8 +265,8 @@ function MuPDFRenderer:new(options)
     return instance
 end
 
-function MuPDFRenderer:clearBaseDirectory()
-    if self.keep_old_files then
+function MuPDFRenderer:clearBaseDirectory(force)
+    if self.keep_old_files and not force then
         return true
     end
     local dir = self.base_dir
@@ -282,6 +282,18 @@ function MuPDFRenderer:clearBaseDirectory()
                 return false, err
             end
         end
+    end
+    return true
+end
+
+function MuPDFRenderer:forceClearCache()
+    local cleared, err = self:clearBaseDirectory(true)
+    if not cleared then
+        return false, err
+    end
+    local ensured, ensure_err = ensureDirectory(self.base_dir)
+    if not ensured then
+        return false, ensure_err
     end
     return true
 end
@@ -320,32 +332,34 @@ function MuPDFRenderer:fetchAndStore(url)
     local main_html_path = main_path_base .. ".html"
 
     for _, asset in ipairs(assets) do
-        if asset.kind ~= "image" or self.download_images ~= false then
-            local ref = asset.url
-            local resolved = resolveUrl(url, ref)
-        if resolved and resolved ~= "" then
-            local asset_ok, asset_body, asset_headers = fetchUrl(resolved, self.timeout, self.maxtime)
-            if asset_ok and asset_body then
-                local asset_base = urlToCachePath(self.base_dir, resolved)
-                local asset_ext = extensionForContentType(asset_headers and asset_headers["content-type"], resolved)
-                local asset_path = asset_base .. asset_ext
-                local asset_dir = dirname(asset_path)
-                if asset_dir ~= "" then
-                    local ensured_asset_dir, ensure_asset_err = ensureDirectory(asset_dir)
-                    if not ensured_asset_dir then
-                        logger.warn("webbrowser_mupdf_renderer", "failed to create asset directory", asset_dir, ensure_asset_err)
+        if asset.kind ~= "script" then -- ignore javascripts
+            if asset.kind ~= "image" or self.download_images ~= false then
+                local ref = asset.url
+                local resolved = resolveUrl(url, ref)
+                if resolved and resolved ~= "" then
+                    local asset_ok, asset_body, asset_headers = fetchUrl(resolved, self.timeout, self.maxtime)
+                    if asset_ok and asset_body then
+                        local asset_base = urlToCachePath(self.base_dir, resolved)
+                        local asset_ext = extensionForContentType(asset_headers and asset_headers["content-type"], resolved)
+                        local asset_path = asset_base .. asset_ext
+                        local asset_dir = dirname(asset_path)
+                        if asset_dir ~= "" then
+                            local ensured_asset_dir, ensure_asset_err = ensureDirectory(asset_dir)
+                            if not ensured_asset_dir then
+                                logger.warn("webbrowser_mupdf_renderer", "failed to create asset directory", asset_dir, ensure_asset_err)
+                            end
+                        end
+                        local wrote = writeFile(asset_path, asset_body)
+                        if wrote then
+                            local relative = relativePath(main_dir, asset_path)
+                            body = body:gsub(escapePattern(resolved), relative)
+                            body = body:gsub(escapePattern(ref), relative)
+                        else
+                            logger.warn("webbrowser_mupdf_renderer", "failed to write asset", asset_path)
+                        end
                     end
                 end
-                local wrote = writeFile(asset_path, asset_body)
-                if wrote then
-                    local relative = relativePath(main_dir, asset_path)
-                    body = body:gsub(escapePattern(resolved), relative)
-                    body = body:gsub(escapePattern(ref), relative)
-                else
-                    logger.warn("webbrowser_mupdf_renderer", "failed to write asset", asset_path)
-                end
             end
-        end
         end
     end
 

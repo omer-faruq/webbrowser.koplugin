@@ -116,6 +116,32 @@ function WebBrowser:shouldKeepOldWebsiteFiles()
     return false
 end
 
+function WebBrowser:clearMuPDFCache()
+    if not (self:isMuPDFRender() and self:shouldKeepOldWebsiteFiles()) then
+        UIManager:show(InfoMessage:new {
+            text = _("MuPDF cache clearing is not available."),
+            timeout = 2,
+        })
+        return
+    end
+
+    local renderer = self:getMuPDFRenderer()
+    local ok, err = renderer:forceClearCache()
+
+    if ok then
+        UIManager:show(InfoMessage:new {
+            text = _("MuPDF cache cleared."),
+            timeout = 2,
+        })
+        return
+    end
+
+    UIManager:show(InfoMessage:new {
+        text = err or _("Failed to clear MuPDF cache."),
+        timeout = 3,
+    })
+end
+
 function WebBrowser:ensureMuPDFLinkHandler()
     if not self:isMuPDFRender() then
         return
@@ -585,12 +611,25 @@ function WebBrowser:showSearchDialog()
                         self:openDirectUrl(url_input)
                     end,
                 },
+            },
+            {
                 {
                     text = _("Bookmarks"),
                     callback = function()
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
                         self:showBookmarksDialog()
+                    end,
+                },
+                {
+                    text = _("Clear cache"),
+                    enabled_func = function()
+                        return self:isMuPDFRender() and self:shouldKeepOldWebsiteFiles()
+                    end,
+                    callback = function()
+                        UIManager:close(self.search_dialog)
+                        self.search_dialog = nil
+                        self:clearMuPDFCache()
                     end,
                 },
             },
