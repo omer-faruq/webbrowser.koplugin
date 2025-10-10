@@ -22,7 +22,7 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 ## Brave API Setup
 - **Obtain an API key**: Create or sign in to your Brave account and generate a key at [Brave Search Dashboard](https://api-dashboard.search.brave.com/app/dashboard).
 - **Configure the plugin**: Store the issued key in `plugins/webbrowser.koplugin/webbrowser_configuration.lua` under `engines.brave_api.api_key` (or your preferred secure storage method).
-- **Free-tier limits**: 1 request per second and up to 2,000 queries per month. Consider caching or using DuckDuckGo for lighter usage to stay within quota.
+- **Free-tier limits**: 1 request per second and up to 2,000 queries per month. Consider caching or using DuckDuckGo for lighter usage to stay within the quota.
 
 ## Rendering Modes
 - **Markdown**: Fetches content through the Jina AI Markdown gateway and displays it in the lightweight Markdown viewer.
@@ -30,6 +30,7 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 
 ## Limitations
 - **Markdown gateway rate cap**: The Jina AI gateway currently allows opening up to 20 pages per minute; exceeding this limit may result in temporary rate limiting.
+- **Site restrictions**: Some websites block automated Markdown conversion or content extraction. In such cases, you can manually enable the **MuPDF render mode** in your configuration file to display the page content directly.
 
 ## Getting Started
 - **Download & rename**: Clone or download this repository and rename the top-level folder to `webbrowser.koplugin/`.
@@ -39,8 +40,8 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
   - PocketBook: `applications/koreader/plugins/`
   - Android: `koreader/plugins/`
   - macOS: `~/Library/Application Support/koreader/plugins/`
-- **Configuration file**: In `webbrowser.koplugin/`, create or edit `webbrowser_configuration.lua` to adjust settings like search engine keys or feature toggles.
-- **Search the web**: Choose "Web Browser" from the main menu under search category and enter a query in the search dialog.
+- **Configuration file**: In `webbrowser.koplugin/`, create or edit `webbrowser_configuration.lua` to adjust settings like search engine keys, render modes, or feature toggles. You can make a copy of the file `webbrowser_configuration.sample.lua` and rename it to `webbrowser_configuration.lua`, and edit it. 
+- **Search the web**: Choose "Web Browser" from the main menu under the search category and enter a query in the search dialog.
 - **Navigate results**: Tap a result to fetch its Markdown representation or return to the list at any time.
 - **Manage bookmarks**: Save the current page, add manual entries, or revisit stored content through the bookmark dialog.
 - **Save for later**: Use the save action in the viewer to archive the Markdown file in your preferred directory.
@@ -53,7 +54,7 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 
 ## Credits
 - **Built with Windsurf**: This KOReader web browser plugin was implemented through a Windsurf-assisted development workflow.
-- **MuPDF workflow inspiration**: HTML-to-MuPDF handling was adapted from [Frenzie's](https://github.com/Frenzie) repository, many thanks!
+- **MuPDF workflow inspiration**: HTML-to-MuPDF handling was adapted from [Frenzie](https://github.com/Frenzie)'s repository, many thanks!
 
 ## License
 - **GPL-3.0**: Distributed under the KOReader project license. See the root `LICENSE` file for full terms.
