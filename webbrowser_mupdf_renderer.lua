@@ -256,6 +256,7 @@ function MuPDFRenderer:new(options)
         maxtime = (options and options.maxtime) or DEFAULT_MAXTIME,
         keep_old_files = options and options.keep_old_files or false,
         download_images = options and options.download_images,
+        use_stylesheets = options and options.use_stylesheets,
     }
 
     setmetatable(instance, self)
@@ -333,7 +334,14 @@ function MuPDFRenderer:fetchAndStore(url)
 
     for _, asset in ipairs(assets) do
         if asset.kind ~= "script" then -- ignore javascripts
-            if asset.kind ~= "image" or self.download_images ~= false then
+            local should_download = true
+            if asset.kind == "image" and self.download_images == false then
+                should_download = false
+            elseif asset.kind == "stylesheet" and self.use_stylesheets == false then
+                should_download = false
+            end
+
+            if should_download then
                 local ref = asset.url
                 local resolved = resolveUrl(url, ref)
                 if resolved and resolved ~= "" then
@@ -368,6 +376,12 @@ function MuPDFRenderer:fetchAndStore(url)
     local wrote_main, write_err = writeFile(main_html_path, body)
     if not wrote_main then
         return false, write_err
+    end
+
+    local sdr_path = main_path_base .. ".sdr"
+    local removed_sdr, remove_sdr_err = removePath(sdr_path)
+    if not removed_sdr then
+        logger.warn("webbrowser_mupdf_renderer", "failed to remove existing .sdr directory", sdr_path, remove_sdr_err)
     end
 
     return true, main_html_path

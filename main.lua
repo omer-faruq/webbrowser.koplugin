@@ -64,6 +64,23 @@ function WebBrowser:shouldDownloadImages()
     return true
 end
 
+function WebBrowser:shouldUseStylesheets()
+    local value = CONFIG.use_stylesheets
+    if type(value) == "boolean" then
+        return value
+    end
+    if type(value) == "string" then
+        local normalized = value:lower()
+        if normalized == "false" or normalized == "0" or normalized == "no" then
+            return false
+        end
+        if normalized == "true" or normalized == "1" or normalized == "yes" then
+            return true
+        end
+    end
+    return true
+end
+
 function WebBrowser:normalizeUrlInput(input)
     local trimmed = trim_text(input or "")
     if trimmed == "" then
@@ -99,6 +116,7 @@ function WebBrowser:getMuPDFRenderer()
         self.mupdf_renderer = MuPDFRenderer:new {
             keep_old_files = self:shouldKeepOldWebsiteFiles(),
             download_images = self:shouldDownloadImages(),
+            use_stylesheets = self:shouldUseStylesheets(),
         }
     end
     return self.mupdf_renderer
