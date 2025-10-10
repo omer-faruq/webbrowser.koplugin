@@ -152,8 +152,69 @@ function WebBrowser:ensureMuPDFLinkHandler()
             }
         end)
 
+        self.ui.link:addToExternalLinkDialog("40_bookmark_webbrowser_mupdf", function(external_dialog, link_url)
+            return {
+                text = _("Bookmark (Browser)"),
+                callback = function()
+                    UIManager:close(external_dialog.external_link_dialog)
+                    local target_url = link_url
+                    if type(target_url) ~= "string" or not target_url:match("^https?://") then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Bookmark URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    local added, message = self:addBookmarkEntry(target_url)
+                    if message and message ~= "" then
+                        UIManager:show(InfoMessage:new {
+                            text = message,
+                            timeout = 2,
+                        })
+                    end
+                end,
+                show_in_dialog_func = function()
+                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and self:isMuPDFRender()
+                end,
+            }
+        end)
+
         self.mu_pdf_link_handler_registered = true
     end)
+end
+
+function WebBrowser:addBookmarkEntry(source_url, title, missing_message)
+    if type(source_url) ~= "string" or source_url == "" then
+        return false, missing_message or _("Bookmark URL is missing.")
+    end
+
+    local store = self:getBookmarksStore()
+    local bookmarks = self:getBookmarks()
+    local normalized_source = Utils.ensure_markdown_gateway(source_url)
+
+    for index, entry in ipairs(bookmarks) do
+        if entry then
+            local existing_source = entry.source_url or entry.url
+            local normalized_existing_source = existing_source and Utils.ensure_markdown_gateway(existing_source)
+            if (existing_source and existing_source == source_url)
+                or (normalized_source and normalized_existing_source and normalized_existing_source == normalized_source)
+                or (title and title ~= "" and entry.title == title) then
+                return false, _("Bookmark already exists.")
+            end
+        end
+    end
+
+    local title_to_save = (title and title ~= "" and title) or source_url
+    local new_entry = {
+        id = Random.uuid(true),
+        title = title_to_save,
+        source_url = source_url,
+    }
+
+    table.insert(bookmarks, 1, new_entry)
+    store:setAll(bookmarks)
+    return true, _("Bookmark added.")
 end
 
 function WebBrowser:openMuPDFDocument(file_path)
@@ -478,7 +539,7 @@ function WebBrowser:showSearchDialog()
     self.search_dialog = InputDialog:new {
         title = string.format(_("%s Search"), engine_display),
         input = "",
-        input_hint = _("Enter keywords"),
+        input_hint = _("Enter keywords or URL"),
         buttons = {
             {
                 {
@@ -856,49 +917,16 @@ function WebBrowser:onBookmarkCurrentPage()
         return
     end
 
-    local store = self:getBookmarksStore()
-    local bookmarks = self:getBookmarks()
     local current_source_url = self.current_page.source_url or self.current_page.gateway_url
-    if not current_source_url or current_source_url == "" then
-        UIManager:show(InfoMessage:new {
-            text = _("Current page URL is missing."),
-            timeout = 2,
-        })
-        return
-    end
-
-    local normalized_current_url = Utils.ensure_markdown_gateway(current_source_url)
     local current_title = self.current_page.title
 
-    for _, entry in ipairs(bookmarks) do
-        if entry then
-            local existing_source = entry.source_url or entry.url
-            local normalized_existing_source = existing_source and Utils.ensure_markdown_gateway(existing_source)
-            if (existing_source and existing_source == current_source_url)
-                or (normalized_current_url and normalized_existing_source and normalized_existing_source == normalized_current_url)
-                or (current_title and entry.title == current_title) then
-                UIManager:show(InfoMessage:new {
-                    text = _("Bookmark already exists."),
-                    timeout = 2,
-                })
-                return
-            end
-        end
+    local added, message = self:addBookmarkEntry(current_source_url, current_title, _("Current page URL is missing."))
+    if message and message ~= "" then
+        UIManager:show(InfoMessage:new {
+            text = message,
+            timeout = 2,
+        })
     end
-
-    local title_to_save = current_title and current_title ~= "" and current_title or current_source_url
-    local new_entry = {
-        id = Random.uuid(true),
-        title = title_to_save,
-        source_url = current_source_url,
-    }
-
-    table.insert(bookmarks, 1, new_entry)
-    store:setAll(bookmarks)
-    UIManager:show(InfoMessage:new {
-        text = _("Bookmark added."),
-        timeout = 2,
-    })
 end
 
 function WebBrowser:getBookmarksStore()
