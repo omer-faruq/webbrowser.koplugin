@@ -251,7 +251,7 @@ end
 
 function MuPDFRenderer:new(options)
     local instance = {
-        base_dir = (options and options.base_dir) or (DataStorage:getDataDir() .. "/cache/webbrowser_mupdf"),
+        base_dir = (options and options.base_dir) or (DataStorage:getDataDir() .. "/cache/webbrowser"),
         timeout = (options and options.timeout) or DEFAULT_TIMEOUT,
         maxtime = (options and options.maxtime) or DEFAULT_MAXTIME,
         keep_old_files = options and options.keep_old_files or false,
@@ -354,7 +354,7 @@ function MuPDFRenderer:fetchAndStore(url)
                         if asset_dir ~= "" then
                             local ensured_asset_dir, ensure_asset_err = ensureDirectory(asset_dir)
                             if not ensured_asset_dir then
-                                logger.warn("webbrowser_mupdf_renderer", "failed to create asset directory", asset_dir, ensure_asset_err)
+                                logger.warn("webbrowser_renderer", "failed to create asset directory", asset_dir, ensure_asset_err)
                             end
                         end
                         local wrote = writeFile(asset_path, asset_body)
@@ -363,7 +363,7 @@ function MuPDFRenderer:fetchAndStore(url)
                             body = body:gsub(escapePattern(resolved), relative)
                             body = body:gsub(escapePattern(ref), relative)
                         else
-                            logger.warn("webbrowser_mupdf_renderer", "failed to write asset", asset_path)
+                            logger.warn("webbrowser_renderer", "failed to write asset", asset_path)
                         end
                     end
                 end
@@ -381,7 +381,7 @@ function MuPDFRenderer:fetchAndStore(url)
     local sdr_path = main_path_base .. ".sdr"
     local removed_sdr, remove_sdr_err = removePath(sdr_path)
     if not removed_sdr then
-        logger.warn("webbrowser_mupdf_renderer", "failed to remove existing .sdr directory", sdr_path, remove_sdr_err)
+        logger.warn("webbrowser_renderer", "failed to remove existing .sdr directory", sdr_path, remove_sdr_err)
     end
 
     return true, main_html_path

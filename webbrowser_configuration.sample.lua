@@ -23,9 +23,9 @@ return {
         },
     },
 
-    render_type = "mupdf", -- options: "mupdf", "markdown"
+    render_type = "cre", -- options: "cre","mupdf", "markdown"  mupdf: pdf-like , cre: epub-like experience
     save_to_directory = nil, -- for markdown render_type. : when using the save button it will save into this directory.
-    keep_old_website_files = true, -- for mupdf render_type.
-    download_images = false, --for mupdf render_type.
-    use_stylesheets =false, --for mupdf render_type: using stylesheets sometimes results in unreadable text. 
+    keep_old_website_files = true, -- for mupdf and cre render_types.
+    download_images = false, --for mupdf and cre  render_types.
+    use_stylesheets =false, --for mupdf and cre render_types: using stylesheets sometimes results in unreadable text. 
 }

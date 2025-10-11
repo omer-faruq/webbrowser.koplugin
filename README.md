@@ -1,6 +1,6 @@
 # Text-Based Web Browser Plugin for KOReader
 
-Experience distraction-free browsing on e-ink devices with a text-only workflow powered by KOReader. This plugin is designed to keep navigation lightweight while preserving essential page content in Markdown form.
+Experience distraction-free browsing on e-ink devices with a KOReader-native workflow. Choose between Markdown, CRE, or MuPDF rendering to balance readability and fidelity while keeping navigation lightweight.
 
 ## Features
 - **Search dialog**: Launch queries directly from KOReader using a custom dialog tailored for e-ink interaction.
@@ -26,11 +26,12 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 
 ## Rendering Modes
 - **Markdown**: Fetches content through the Jina AI Markdown gateway and displays it in the lightweight Markdown viewer.
+- **CRE**: Streams the downloaded HTML into the Cool Reader Engine for EPUB-like pagination, adjustable zoom, and the most consistent in-app browsing experience. If you want a web feel while staying inside KOReader, this is the recommended mode. When in CRE mode, the "Open here (CRE)" action remains available in KOReader's external link dialog so you can continue browsing in place.
 - **MuPDF**: Downloads the raw HTML (plus assets) to a temporary cache and opens it through MuPDF for a closer-to-original layout. When in MuPDF mode, the "Open here (MuPDF)" action remains available in KOReader's external link dialog so you can continue browsing in place.
 
 ## Limitations
 - **Markdown gateway rate cap**: The Jina AI gateway currently allows opening up to 20 pages per minute; exceeding this limit may result in temporary rate limiting.
-- **Site restrictions**: Some websites block automated Markdown conversion or content extraction. In such cases, you can manually enable the **MuPDF render mode** in your configuration file to display the page content directly.
+- **Site restrictions**: Some websites block automated Markdown conversion or content extraction. In such cases, you can manually enable the **CRE** or **MuPDF** render mode in your configuration file to display the page content directly.
 
 ## Getting Started
 - **Download & rename**: Clone or download this repository and rename the top-level folder to `webbrowser.koplugin/`.
@@ -47,10 +48,10 @@ Experience distraction-free browsing on e-ink devices with a text-only workflow 
 - **Save for later**: Use the save action in the viewer to archive the Markdown file in your preferred directory.
 
 ## Tips
-- **Stay online**: Searching, fetching Markdown, and retrieving MuPDF assets require an active network connection.
-- **Mind the rate limit**: When quickly opening multiple Markdown pages, pause briefly to avoid hitting the conversion cap.
+- **Stay online**: Searching, fetching Markdown, and retrieving CRE or MuPDF assets require an active network connection.
+- **Mind the rate limit**: The Markdown gateway and initial CRE/MuPDF downloads benefit from short pauses when opening many pages in succession.
 - **Use bookmarks for caching**: Opening a saved bookmark with stored Markdown bypasses another conversion request, helping conserve API usage.
-- **Keep MuPDF cache tidy**: Disable the `keep_old_website_files` option if you prefer to discard previously downloaded MuPDF pages automatically.
+- **Keep web cache tidy**: Disable the `keep_old_website_files` option if you prefer to discard previously downloaded CRE or MuPDF pages automatically.
 
 ## Credits
 - **Built with Windsurf**: This KOReader web browser plugin was implemented through a Windsurf-assisted development workflow.

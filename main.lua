@@ -20,7 +20,7 @@ local DocumentRegistry = require("document/documentregistry")
 
 local MarkdownViewer = require("webbrowser_markdown_viewer")
 local Utils = require("webbrowser_utils")
-local MuPDFRenderer = require("webbrowser_mupdf_renderer")
+local MuPDFRenderer = require("webbrowser_renderer")
 local config_loaded, config_result = pcall(require, "webbrowser_configuration")
 local CONFIG = config_loaded and config_result or {}
 local CONFIG_MISSING = not config_loaded
@@ -100,6 +100,9 @@ function WebBrowser:getRenderType()
     if render_type == "mupdf" then
         return "mupdf"
     end
+    if render_type == "cre" then
+        return "cre"
+    end
     return "markdown"
 end
 
@@ -109,6 +112,10 @@ end
 
 function WebBrowser:isMuPDFRender()
     return self:getRenderType() == "mupdf"
+end
+
+function WebBrowser:isCreRender()
+    return self:getRenderType() == "cre"
 end
 
 function WebBrowser:getMuPDFRenderer()
@@ -135,9 +142,9 @@ function WebBrowser:shouldKeepOldWebsiteFiles()
 end
 
 function WebBrowser:clearMuPDFCache()
-    if not (self:isMuPDFRender() and self:shouldKeepOldWebsiteFiles()) then
+    if not ((self:isMuPDFRender() or self:isCreRender()) and self:shouldKeepOldWebsiteFiles()) then
         UIManager:show(InfoMessage:new {
-            text = _("MuPDF cache clearing is not available."),
+            text = _("Renderer cache clearing is not available."),
             timeout = 2,
         })
         return
@@ -148,32 +155,42 @@ function WebBrowser:clearMuPDFCache()
 
     if ok then
         UIManager:show(InfoMessage:new {
-            text = _("MuPDF cache cleared."),
+            text = _("Cache cleared."),
             timeout = 2,
         })
         return
     end
 
     UIManager:show(InfoMessage:new {
-        text = err or _("Failed to clear MuPDF cache."),
+        text = err or _("Failed to clear cache."),
         timeout = 3,
     })
 end
 
 function WebBrowser:ensureMuPDFLinkHandler()
-    if not self:isMuPDFRender() then
+    if not (self:isMuPDFRender() or self:isCreRender()) then
         return
     end
     if self.mu_pdf_link_handler_registered then
         return
     end
 
-    UIManager:nextTick(function()
-        if not self:isMuPDFRender() then
+    local max_attempts = 20
+
+    local function tryRegister(attempt)
+        if self.mu_pdf_link_handler_registered then
+            return
+        end
+        if not (self:isMuPDFRender() or self:isCreRender()) then
             return
         end
         if not (self.ui and self.ui.link and self.ui.link.addToExternalLinkDialog) then
-            self.mu_pdf_link_handler_registered = false
+            if attempt >= max_attempts then
+                return
+            end
+            UIManager:nextTick(function()
+                tryRegister(attempt + 1)
+            end)
             return
         end
 
@@ -192,6 +209,25 @@ function WebBrowser:ensureMuPDFLinkHandler()
                 end,
                 show_in_dialog_func = function()
                     return type(link_url) == "string" and link_url:match("^https?://") ~= nil and self:isMuPDFRender()
+                end,
+            }
+        end)
+
+        self.ui.link:addToExternalLinkDialog("36_open_here_webbrowser_cre", function(external_dialog, link_url)
+            return {
+                text = _("Open here (CRE)"),
+                callback = function()
+                    UIManager:close(external_dialog.external_link_dialog)
+                    local target_url = link_url
+                    if type(target_url) ~= "string" or not target_url:match("^https?://") then
+                        return
+                    end
+                    NetworkMgr:runWhenOnline(function()
+                        self:loadCreUrl(target_url, false, _("Loading page…"))
+                    end)
+                end,
+                show_in_dialog_func = function()
+                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and self:isCreRender()
                 end,
             }
         end)
@@ -219,13 +255,15 @@ function WebBrowser:ensureMuPDFLinkHandler()
                     end
                 end,
                 show_in_dialog_func = function()
-                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and self:isMuPDFRender()
+                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and (self:isMuPDFRender() or self:isCreRender())
                 end,
             }
         end)
 
         self.mu_pdf_link_handler_registered = true
-    end)
+    end
+
+    tryRegister(1)
 end
 
 function WebBrowser:addBookmarkEntry(source_url, title, missing_message)
@@ -273,6 +311,25 @@ function WebBrowser:openMuPDFDocument(file_path)
     end
 end
 
+function WebBrowser:openCreDocument(file_path)
+    if type(file_path) ~= "string" or file_path == "" then
+        return
+    end
+    local provider = DocumentRegistry:getProviderFromKey("crengine")
+    if not provider then
+        UIManager:show(InfoMessage:new {
+            text = _("CRE provider is not available."),
+            timeout = 2,
+        })
+        return
+    end
+    if self.ui.document then
+        self.ui:showReader(file_path, provider, true, true)
+    else
+        self.ui:openFile(file_path, provider)
+    end
+end
+
 function WebBrowser:loadMuPDFUrl(url, reopen_results, loading_text)
     if type(url) ~= "string" or url == "" then
         self:handleFetchError(_("Invalid URL."), reopen_results)
@@ -305,6 +362,38 @@ function WebBrowser:loadMuPDFUrl(url, reopen_results, loading_text)
     return true
 end
 
+function WebBrowser:loadCreUrl(url, reopen_results, loading_text)
+    if type(url) ~= "string" or url == "" then
+        self:handleFetchError(_("Invalid URL."), reopen_results)
+        return false
+    end
+
+    self:ensureMuPDFLinkHandler()
+
+    local info
+    if loading_text and loading_text ~= "" then
+        info = InfoMessage:new {
+            text = loading_text,
+            timeout = 0,
+        }
+        UIManager:show(info)
+    end
+
+    local ok, result_or_err = self:getMuPDFRenderer():fetchAndStore(url)
+
+    if info then
+        UIManager:close(info)
+    end
+
+    if not ok then
+        self:handleFetchError(result_or_err, reopen_results)
+        return false
+    end
+
+    self:openCreDocument(result_or_err)
+    return true
+end
+
 function WebBrowser:openDirectUrl(raw_input)
     local normalized = self:normalizeUrlInput(raw_input)
     if not normalized then
@@ -318,6 +407,11 @@ function WebBrowser:openDirectUrl(raw_input)
     NetworkMgr:runWhenOnline(function()
         if self:isMuPDFRender() then
             self:loadMuPDFUrl(normalized, false, _("Loading page…"))
+            return
+        end
+
+        if self:isCreRender() then
+            self:loadCreUrl(normalized, false, _("Loading page…"))
             return
         end
 
@@ -458,7 +552,7 @@ function WebBrowser:init()
     self.last_results = nil
     self.mupdf_renderer = nil
     self.mu_pdf_link_handler_registered = false
-    if self:isMuPDFRender() then
+    if self:isMuPDFRender() or self:isCreRender() then
         self:ensureMuPDFLinkHandler()
     end
 end
@@ -642,11 +736,9 @@ function WebBrowser:showSearchDialog()
                 {
                     text = _("Clear cache"),
                     enabled_func = function()
-                        return self:isMuPDFRender() and self:shouldKeepOldWebsiteFiles()
+                        return (self:isMuPDFRender() or self:isCreRender()) and self:shouldKeepOldWebsiteFiles()
                     end,
                     callback = function()
-                        UIManager:close(self.search_dialog)
-                        self.search_dialog = nil
                         self:clearMuPDFCache()
                     end,
                 },
@@ -771,6 +863,16 @@ function WebBrowser:openResultMuPDF(result)
     self:loadMuPDFUrl(raw_url, true, _("Loading page…"))
 end
 
+function WebBrowser:openResultCre(result)
+    if not result then
+        self:handleFetchError(_("Invalid result."), true)
+        return
+    end
+    local raw_url = result.url or result.gateway_url or result.source_url
+    raw_url = Utils.decode_result_url(raw_url)
+    self:loadCreUrl(raw_url, true, _("Loading page…"))
+end
+
 function WebBrowser:openResult(result)
     NetworkMgr:runWhenOnline(function()
         if self.results_menu then
@@ -780,6 +882,11 @@ function WebBrowser:openResult(result)
 
         if self:isMuPDFRender() then
             self:openResultMuPDF(result)
+            return
+        end
+
+        if self:isCreRender() then
+            self:openResultCre(result)
             return
         end
 
@@ -1168,6 +1275,11 @@ function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
     NetworkMgr:runWhenOnline(function()
         if self:isMuPDFRender() then
             self:loadMuPDFUrl(direct_url, false, _("Loading bookmark…"))
+            return
+        end
+
+        if self:isCreRender() then
+            self:loadCreUrl(direct_url, false, _("Loading bookmark…"))
             return
         end
 
