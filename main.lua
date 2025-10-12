@@ -8,6 +8,7 @@ local MultiInputDialog = require("ui/widget/multiinputdialog")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local util = require("util")
+local FileManager = require("apps/filemanager/filemanager")
 local FileManagerUtil = require("apps/filemanager/filemanagerutil")
 local lfs = require("libs/libkoreader-lfs")
 local socket_http = require("socket.http")
@@ -45,6 +46,24 @@ local fetch_markdown
 
 local function trim_text(value)
     return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function is_html_file(path)
+    if type(path) ~= "string" then
+        return false
+    end
+    local lower = path:lower()
+    local stripped = lower:match("([^?#]+)") or lower
+    if stripped:sub(-5) == ".html" then
+        return true
+    end
+    if stripped:sub(-4) == ".htm" then
+        return true
+    end
+    if stripped:sub(-6) == ".xhtml" then
+        return true
+    end
+    return false
 end
 
 function WebBrowser:shouldDownloadImages()
@@ -303,6 +322,10 @@ function WebBrowser:openMuPDFDocument(file_path)
     if type(file_path) ~= "string" or file_path == "" then
         return
     end
+    if not is_html_file(file_path) then
+        FileManager:openFile(file_path)
+        return
+    end
     local provider = DocumentRegistry:getProviderFromKey("mupdf")
     if self.ui.document then
         self.ui:showReader(file_path, provider, true, true)
@@ -313,6 +336,10 @@ end
 
 function WebBrowser:openCreDocument(file_path)
     if type(file_path) ~= "string" or file_path == "" then
+        return
+    end
+    if not is_html_file(file_path) then
+        FileManager:openFile(file_path)
         return
     end
     local provider = DocumentRegistry:getProviderFromKey("crengine")

@@ -10,8 +10,8 @@ local logger = require("logger")
 local MuPDFRenderer = {}
 MuPDFRenderer.__index = MuPDFRenderer
 
-local DEFAULT_TIMEOUT = 20
-local DEFAULT_MAXTIME = 60
+local DEFAULT_TIMEOUT = 60
+local DEFAULT_MAXTIME = 300
 
 local function ensureDirectory(path)
     local ok, err = util.makePath(path)
@@ -65,21 +65,39 @@ local function writeFile(path, data)
     return true
 end
 
-local function fetchUrl(url, timeout, maxtime)
+local function fetchUrl(url, timeout, maxtime, redirect_count, request_headers)
+    redirect_count = redirect_count or 0
+    if redirect_count > 5 then
+        return false, "too many redirects"
+    end
     local chunks = {}
+    local headers = request_headers and util.tableDeepCopy(request_headers) or {
+        ["user-agent"] = "Mozilla/5.0 (compatible; KOReader)",
+    }
     socketutil:set_timeout(timeout or DEFAULT_TIMEOUT, maxtime or DEFAULT_MAXTIME)
     local ok, code, headers, status = socket_http.request{
         url = url,
         method = "GET",
         sink = ltn12.sink.table(chunks),
-        headers = {
-            ["user-agent"] = "Mozilla/5.0 (compatible; KOReader)",
-        },
+        headers = headers,
     }
     socketutil:reset_timeout()
 
     if not ok then
         return false, code or status or "request failed"
+    end
+
+    if code >= 300 and code <= 399 and headers and headers.location then
+        local location = headers.location
+        if location and location ~= "" then
+            if not location:match("^[%w][%w%+%-.]*:") then
+                location = urlmod.absolute(url, location)
+            end
+            local next_headers = request_headers and util.tableDeepCopy(request_headers) or {}
+            next_headers["user-agent"] = next_headers["user-agent"] or "Mozilla/5.0 (compatible; KOReader)"
+            next_headers.Referer = url
+            return fetchUrl(location, timeout, maxtime, redirect_count + 1, next_headers)
+        end
     end
 
     if code < 200 or code > 299 then
@@ -202,12 +220,33 @@ local function urlToCachePath(base_dir, url)
 end
 
 local function extensionForContentType(content_type, url)
+    local function normalizeExt(ext)
+        ext = ext and ext:lower() or nil
+        if not ext or ext == "" then
+            return nil
+        end
+        if ext:sub(1, 1) ~= "." then
+            ext = "." .. ext
+        end
+        return ext
+    end
+
+    local path
+    if url then
+        path = url:match("([^?#]+)") or url
+    end
+    local url_ext = path and normalizeExt(path:match("%.([%a%d]+)$")) or nil
+    local function isHtmlExt(ext)
+        return ext == ".html" or ext == ".htm" or ext == ".xhtml"
+    end
+
+    if url_ext and not isHtmlExt(url_ext) then
+        return url_ext
+    end
+
     if not content_type then
-        if url then
-            local ext = url:match("%.([%a%d]+)$")
-            if ext and ext ~= "" then
-                return "." .. ext
-            end
+        if url_ext then
+            return url_ext
         end
         return ""
     end
@@ -238,12 +277,27 @@ local function extensionForContentType(content_type, url)
     if content_type:find("image/svg") then
         return ".svg"
     end
-
-    if url then
-        local ext = url:match("%.([%a%d]+)$")
-        if ext and ext ~= "" then
-            return "." .. ext
+    if content_type:find("pdf") then
+        return ".pdf"
+    end
+    if content_type:find("epub") then
+        return ".epub"
+    end
+    if content_type:find("mobi") then
+        return ".mobi"
+    end
+    if content_type:find("application/zip") or content_type:find("application/x%-zip") then
+        return ".zip"
+    end
+    if content_type:find("application/octet%-stream") then
+        if url_ext then
+            return url_ext
         end
+        return ""
+    end
+
+    if url_ext then
+        return url_ext
     end
 
     return ""
@@ -319,7 +373,8 @@ function MuPDFRenderer:fetchAndStore(url)
         return false, headers_or_err
     end
 
-    local assets = discoverAssets(body)
+    local headers = type(headers_or_err) == "table" and headers_or_err or {}
+    local content_type = headers["content-type"]
 
     local main_path_base = urlToCachePath(self.base_dir, url)
     local main_dir = dirname(main_path_base)
@@ -330,7 +385,33 @@ function MuPDFRenderer:fetchAndStore(url)
         end
     end
 
-    local main_html_path = main_path_base .. ".html"
+    local extension = extensionForContentType(content_type, url)
+    if extension == "" then
+        extension = ".html"
+    end
+
+    local function ensureExtension(base_path, ext)
+        if ext == "" then
+            return base_path
+        end
+        if base_path:sub(-#ext):lower() == ext:lower() then
+            return base_path
+        end
+        return base_path .. ext
+    end
+
+    local output_path = ensureExtension(main_path_base, extension)
+    local is_html = extension == ".html" or extension == ".htm" or extension == ".xhtml"
+
+    if not is_html then
+        local wrote_binary, write_binary_err = writeFile(output_path, body)
+        if not wrote_binary then
+            return false, write_binary_err
+        end
+        return true, output_path
+    end
+
+    local assets = discoverAssets(body)
 
     for _, asset in ipairs(assets) do
         if asset.kind ~= "script" then -- ignore javascripts
@@ -373,7 +454,7 @@ function MuPDFRenderer:fetchAndStore(url)
 
     body = rewriteRelativeLinksToAbsolute(body, url)
 
-    local wrote_main, write_err = writeFile(main_html_path, body)
+    local wrote_main, write_err = writeFile(output_path, body)
     if not wrote_main then
         return false, write_err
     end
@@ -384,7 +465,7 @@ function MuPDFRenderer:fetchAndStore(url)
         logger.warn("webbrowser_renderer", "failed to remove existing .sdr directory", sdr_path, remove_sdr_err)
     end
 
-    return true, main_html_path
+    return true, output_path
 end
 
 return MuPDFRenderer
