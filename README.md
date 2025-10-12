@@ -43,14 +43,13 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
   - macOS: `~/Library/Application Support/koreader/plugins/`
 - **Configuration file**: In `webbrowser.koplugin/`, create or edit `webbrowser_configuration.lua` to adjust settings like search engine keys, render modes, or feature toggles. You can make a copy of the file `webbrowser_configuration.sample.lua` and rename it to `webbrowser_configuration.lua`, and edit it. 
 - **Search the web**: Choose "Web Browser" from the main menu under the search category and enter a query in the search dialog.
-- **Navigate results**: Tap a result to render it with the currently selected mode (Markdown, CRE, or MuPDF).
+ - **Navigate results**: Tap a result to render it with the currently selected mode (Markdown, CRE, or MuPDF). You can continue reading by opening subsequent pages through their links. In Markdown mode you can return to the previous page with the back button, while CRE and MuPDF modes rely on KOReader's history function to revisit earlier pages.
 - **Manage bookmarks**: Save the current page, add manual entries, or revisit stored content through the bookmark dialog.
 - **Save for later**: Use the save action (on markdown mode) in the viewer to archive the Markdown file in your preferred directory.
 
 ## Tips
 - **Stay online**: Searching, fetching Markdown, and retrieving CRE or MuPDF assets require an active network connection.
 - **Mind the rate limit**: The Markdown gateway and initial CRE/MuPDF downloads benefit from short pauses when opening many pages in succession.
-- **Use bookmarks for caching**: Opening a saved bookmark with stored Markdown bypasses another conversion request, helping conserve API usage.
 - **Keep web cache tidy**: Disable the `keep_old_website_files` option if you prefer to discard previously downloaded CRE or MuPDF pages automatically, or periodically use the **Clear cache** button in the search dialog when that option is enabled.
 
 ## Credits
