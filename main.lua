@@ -819,6 +819,10 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
             callback = function()
                 self:openResult(result)
             end,
+            hold_callback = function()
+                self:showResultActions(result)
+            end,
+            hold_keep_menu_open = true,
         })
     end
 
@@ -830,9 +834,108 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
         close_callback = function()
             self.results_menu = nil
         end,
+        onMenuHold = function(_, item)
+            if item and item.hold_callback then
+                item.hold_callback()
+            end
+        end,
     }
 
     UIManager:show(self.results_menu)
+end
+
+function WebBrowser:showResultActions(result)
+    if not result then
+        return
+    end
+
+    local function sanitizeText(value)
+        if type(value) ~= "string" then
+            return nil
+        end
+        local cleaned = util.htmlToPlainTextIfHtml(value)
+        cleaned = trim_text(cleaned)
+        if cleaned == "" then
+            return nil
+        end
+        return cleaned
+    end
+
+    local title = sanitizeText(result.title)
+    local raw_url = result.url or result.source_url or result.gateway_url
+    local decoded_url = raw_url and Utils.decode_result_url(raw_url)
+    local normalized_url = sanitizeText(decoded_url or raw_url)
+    local snippet = sanitizeText(result.snippet)
+
+    local dialog_title = title or normalized_url or _("Search result")
+
+    local info_entries = {}
+    if title and dialog_title ~= title then
+        table.insert(info_entries, title)
+    end
+    if normalized_url and normalized_url ~= "" and dialog_title ~= normalized_url then
+        table.insert(info_entries, normalized_url)
+    end
+    if snippet then
+        table.insert(info_entries, snippet)
+    end
+
+    local bookmark_url = (normalized_url and normalized_url ~= "") and normalized_url or raw_url
+
+    local dialog
+    dialog = ButtonDialog:new {
+        title = dialog_title,
+        dismissable = true,
+        buttons = {
+            {
+                {
+                    text = _("Go"),
+                    callback = function()
+                        UIManager:close(dialog)
+                        self:openResult(result)
+                    end,
+                },
+                {
+                    text = _("Bookmark"),
+                    callback = function()
+                        local added, message = self:addBookmarkEntry(bookmark_url, title, _("Bookmark URL is missing."))
+                        if message and message ~= "" then
+                            UIManager:show(InfoMessage:new {
+                                text = message,
+                                timeout = 2,
+                            })
+                        end
+                        if added then
+                            UIManager:close(dialog)
+                        end
+                    end,
+                },
+                {
+                    text = _("Close"),
+                    callback = function()
+                        UIManager:close(dialog)
+                    end,
+                },
+            },
+        },
+    }
+
+    if #info_entries > 0 then
+        for index, entry_text in ipairs(info_entries) do
+            local info_widget = CheckButton:new {
+                text = entry_text,
+                parent = dialog,
+                checkable = false,
+                enabled = true,
+                dim = false,
+                separator = index < #info_entries,
+            }
+            info_widget.not_focusable = true
+            dialog:addWidget(info_widget)
+        end
+    end
+
+    UIManager:show(dialog)
 end
 
 function WebBrowser:openResultMarkdown(result)
