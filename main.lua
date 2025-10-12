@@ -66,6 +66,122 @@ local function is_html_file(path)
     return false
 end
 
+local function copy_file(source_path, destination_path)
+    local source, src_err = io.open(source_path, "rb")
+    if not source then
+        return false, src_err
+    end
+
+    local destination, dst_err = io.open(destination_path, "wb")
+    if not destination then
+        source:close()
+        return false, dst_err
+    end
+
+    while true do
+        local chunk = source:read(8192)
+        if not chunk then
+            break
+        end
+        destination:write(chunk)
+    end
+
+    source:close()
+    destination:close()
+    return true
+end
+
+local function build_unique_file_path(directory, filename)
+    local safe_name = util.getSafeFilename(filename, directory)
+    if safe_name == "" then
+        safe_name = os.date("web_%Y%m%d_%H%M%S")
+    end
+    local name_without_ext, ext = util.splitFileNameSuffix(safe_name)
+    local extension = ext ~= "" and ("." .. ext) or ""
+    local base = name_without_ext ~= "" and name_without_ext or os.date("web_%Y%m%d_%H%M%S")
+    local candidate = string.format("%s/%s%s", directory, base, extension)
+    local counter = 1
+    while util.fileExists(candidate) do
+        candidate = string.format("%s/%s_%d%s", directory, base, counter, extension)
+        counter = counter + 1
+    end
+    return candidate
+end
+
+function WebBrowser:saveExternalUrl(url)
+    if type(url) ~= "string" or url == "" then
+        UIManager:show(InfoMessage:new {
+            text = _("Invalid URL."),
+            timeout = 3,
+        })
+        return
+    end
+
+    local target_dir, attempts = self:determineSaveDirectory()
+    if not target_dir then
+        UIManager:show(InfoMessage:new {
+            text = _("Unable to resolve save directory."),
+            timeout = 3,
+        })
+        return
+    end
+
+    if attempts and #attempts > 0 then
+        local failed = attempts[1]
+        if failed and failed.error then
+            UIManager:show(InfoMessage:new {
+                text = _(string.format("Falling back to a different folder. Reason: %s", failed.error)),
+                timeout = 3,
+            })
+        end
+    end
+
+    local renderer = self:getMuPDFRenderer()
+    local info = InfoMessage:new {
+        text = _("Downloading…"),
+        timeout = 0,
+    }
+    UIManager:show(info)
+
+    local ok, stored_path_or_error, headers = renderer:fetchAndStore(url)
+
+    UIManager:close(info)
+
+    if not ok then
+        UIManager:show(InfoMessage:new {
+            text = stored_path_or_error or _("Failed to save."),
+            timeout = 3,
+        })
+        return
+    end
+
+    local stored_path = stored_path_or_error
+    local filename = stored_path:match("[^/]+$")
+    if not filename then
+        UIManager:show(InfoMessage:new {
+            text = _("Failed to determine saved file name."),
+            timeout = 3,
+        })
+        return
+    end
+
+    local destination_path = build_unique_file_path(target_dir, filename)
+
+    local copied, copy_err = copy_file(stored_path, destination_path)
+    if not copied then
+        UIManager:show(InfoMessage:new {
+            text = _(string.format("Failed to save file: %s", copy_err)),
+            timeout = 3,
+        })
+        return
+    end
+
+    UIManager:show(InfoMessage:new {
+        text = _(string.format("Saved to %s", destination_path)),
+        timeout = 3,
+    })
+end
+
 function WebBrowser:shouldDownloadImages()
     local value = CONFIG.download_images
     if type(value) == "boolean" then
@@ -279,6 +395,33 @@ function WebBrowser:ensureMuPDFLinkHandler()
             }
         end)
 
+        local function save_link_callback(external_dialog, link_url)
+            UIManager:close(external_dialog.external_link_dialog)
+            local target_url = link_url
+            if type(target_url) ~= "string" or not target_url:match("^https?://") then
+                UIManager:show(InfoMessage:new {
+                    text = _("Save URL is missing."),
+                    timeout = 2,
+                })
+                return
+            end
+            NetworkMgr:runWhenOnline(function()
+                self:saveExternalUrl(target_url)
+            end)
+        end
+
+        self.ui.link:addToExternalLinkDialog("50_save_webbrowser_mupdf", function(external_dialog, link_url)
+            return {
+                text = _("Save"),
+                callback = function()
+                    save_link_callback(external_dialog, link_url)
+                end,
+                show_in_dialog_func = function()
+                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and (self:isMuPDFRender() or self:isCreRender())
+                end,
+            }
+        end)
+
         self.mu_pdf_link_handler_registered = true
     end
 
@@ -339,7 +482,7 @@ function WebBrowser:openCreDocument(file_path)
         return
     end
     if not is_html_file(file_path) then
-        FileManager:openFile(file_path)
+    FileManager:openFile(file_path)
         return
     end
     local provider = DocumentRegistry:getProviderFromKey("crengine")
