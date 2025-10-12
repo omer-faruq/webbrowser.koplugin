@@ -7,6 +7,37 @@ local urlmod = require("socket.url")
 local util = require("util")
 local logger = require("logger")
 
+local DEFAULT_SUPPORTED_FILE_TYPES = {
+    "epub3",
+    "epub",
+    "pdf",
+    "djvu",
+    "xps",
+    "cbt",
+    "cbz",
+    "fb2",
+    "pdb",
+    "txt",
+    "html",
+    "htm",
+    "xhtml",
+    "rtf",
+    "chm",
+    "doc",
+    "mobi",
+    "zip",
+    "md",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "bmp",
+    "webp",
+    "svg",
+    "css",
+    "js",
+}
+
 local MuPDFRenderer = {}
 MuPDFRenderer.__index = MuPDFRenderer
 
@@ -219,88 +250,133 @@ local function urlToCachePath(base_dir, url)
     return base_dir .. "/" .. cleaned
 end
 
-local function extensionForContentType(content_type, url)
-    local function normalizeExt(ext)
-        ext = ext and ext:lower() or nil
-        if not ext or ext == "" then
-            return nil
-        end
-        if ext:sub(1, 1) ~= "." then
-            ext = "." .. ext
-        end
-        return ext
+local function normalizeExtension(ext)
+    if not ext or ext == "" then
+        return nil
     end
+    if ext:sub(1, 1) == "." then
+        ext = ext:sub(2)
+    end
+    ext = ext:lower()
+    if ext == "" then
+        return nil
+    end
+    return ext
+end
+
+local function buildExtensionSet(list)
+    if type(list) ~= "table" then
+        return nil
+    end
+    local set = {}
+    for _, value in ipairs(list) do
+        if type(value) == "string" then
+            local normalized = normalizeExtension(value)
+            if normalized then
+                set[normalized] = true
+            end
+        end
+    end
+    if next(set) then
+        return set
+    end
+    return nil
+end
+
+local DEFAULT_SUPPORTED_EXTENSION_SET = buildExtensionSet(DEFAULT_SUPPORTED_FILE_TYPES)
+
+local function isSupportedExtension(ext, supported_extensions)
+    local normalized = normalizeExtension(ext)
+    if not normalized then
+        return false
+    end
+    if #normalized > 4 and not (supported_extensions and supported_extensions[normalized]) then
+        return false
+    end
+    if not supported_extensions then
+        return false
+    end
+    return supported_extensions[normalized] == true
+end
+
+local function extensionFromContentType(content_type)
+    if not content_type then
+        return nil
+    end
+    local lower = content_type:lower()
+    if lower:find("text/html") or lower:find("application/xhtml") then
+        return "html"
+    end
+    if lower:find("text/css") then
+        return "css"
+    end
+    if lower:find("javascript") then
+        return "js"
+    end
+    if lower:find("image/png") then
+        return "png"
+    end
+    if lower:find("image/jpeg") then
+        return "jpg"
+    end
+    if lower:find("image/gif") then
+        return "gif"
+    end
+    if lower:find("image/webp") then
+        return "webp"
+    end
+    if lower:find("image/svg") then
+        return "svg"
+    end
+    if lower:find("pdf") then
+        return "pdf"
+    end
+    if lower:find("epub") then
+        return "epub"
+    end
+    if lower:find("mobi") then
+        return "mobi"
+    end
+    if lower:find("application/zip") or lower:find("application/x%-zip") then
+        return "zip"
+    end
+    if lower:find("application/octet%-stream") then
+        return nil
+    end
+    if lower:find("text/plain") then
+        return "txt"
+    end
+    if lower:find("text/markdown") or lower:find("application/markdown") then
+        return "md"
+    end
+    return nil
+end
+
+local function extensionForContentType(content_type, url, supported_extensions)
+    supported_extensions = supported_extensions or DEFAULT_SUPPORTED_EXTENSION_SET
 
     local path
     if url then
         path = url:match("([^?#]+)") or url
     end
-    local url_ext = path and normalizeExt(path:match("%.([%a%d]+)$")) or nil
-    local function isHtmlExt(ext)
-        return ext == ".html" or ext == ".htm" or ext == ".xhtml"
+    local url_extension = path and path:match("%.([%a%d]+)$") or nil
+    if url_extension and isSupportedExtension(url_extension, supported_extensions) then
+        return "." .. normalizeExtension(url_extension)
     end
 
-    if url_ext and not isHtmlExt(url_ext) then
-        return url_ext
+    local mapped = extensionFromContentType(content_type)
+    if mapped and isSupportedExtension(mapped, supported_extensions) then
+        return "." .. normalizeExtension(mapped)
     end
 
-    if not content_type then
-        if url_ext then
-            return url_ext
+    if url_extension and #normalizeExtension(url_extension or "") <= 4 then
+        local normalized_url_ext = normalizeExtension(url_extension)
+        if normalized_url_ext then
+            return "." .. normalized_url_ext
         end
-        return ""
     end
 
-    content_type = content_type:lower()
-
-    if content_type:find("text/html") or content_type:find("application/xhtml") then
-        return ".html"
-    end
-    if content_type:find("text/css") then
-        return ".css"
-    end
-    if content_type:find("javascript") then
-        return ".js"
-    end
-    if content_type:find("image/png") then
-        return ".png"
-    end
-    if content_type:find("image/jpeg") then
-        return ".jpg"
-    end
-    if content_type:find("image/gif") then
-        return ".gif"
-    end
-    if content_type:find("image/webp") then
-        return ".webp"
-    end
-    if content_type:find("image/svg") then
-        return ".svg"
-    end
-    if content_type:find("pdf") then
-        return ".pdf"
-    end
-    if content_type:find("epub") then
-        return ".epub"
-    end
-    if content_type:find("mobi") then
-        return ".mobi"
-    end
-    if content_type:find("application/zip") or content_type:find("application/x%-zip") then
-        return ".zip"
-    end
-    if content_type:find("application/octet%-stream") then
-        if url_ext then
-            return url_ext
-        end
-        return ""
-    end
-
-    if url_ext then
-        return url_ext
-    end
-
-    return ""
+    return ".html"
 end
 
 function MuPDFRenderer:new(options)
@@ -311,6 +387,7 @@ function MuPDFRenderer:new(options)
         keep_old_files = options and options.keep_old_files or false,
         download_images = options and options.download_images,
         use_stylesheets = options and options.use_stylesheets,
+        supported_extensions = buildExtensionSet(options and options.supported_file_types) or DEFAULT_SUPPORTED_EXTENSION_SET,
     }
 
     setmetatable(instance, self)
@@ -385,7 +462,7 @@ function MuPDFRenderer:fetchAndStore(url)
         end
     end
 
-    local extension = extensionForContentType(content_type, url)
+    local extension = extensionForContentType(content_type, url, self.supported_extensions)
     if extension == "" then
         extension = ".html"
     end
@@ -429,7 +506,7 @@ function MuPDFRenderer:fetchAndStore(url)
                     local asset_ok, asset_body, asset_headers = fetchUrl(resolved, self.timeout, self.maxtime)
                     if asset_ok and asset_body then
                         local asset_base = urlToCachePath(self.base_dir, resolved)
-                        local asset_ext = extensionForContentType(asset_headers and asset_headers["content-type"], resolved)
+                        local asset_ext = extensionForContentType(asset_headers and asset_headers["content-type"], resolved, self.supported_extensions)
                         local asset_path = asset_base .. asset_ext
                         local asset_dir = dirname(asset_path)
                         if asset_dir ~= "" then
