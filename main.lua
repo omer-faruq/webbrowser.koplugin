@@ -11,6 +11,7 @@ local util = require("util")
 local FileManager = require("apps/filemanager/filemanager")
 local FileManagerUtil = require("apps/filemanager/filemanagerutil")
 local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
 local socket_http = require("socket.http")
 local socket = require("socket")
 local socketutil = require("socketutil")
@@ -26,6 +27,7 @@ local config_loaded, config_result = pcall(require, "webbrowser_configuration")
 local CONFIG = config_loaded and config_result or {}
 local CONFIG_MISSING = not config_loaded
 local BookmarksStore = require("webbrowser_bookmarks")
+local LastQueryStore = require("webbrowser_lastquery")
 local Random = require("random")
 
 local SearchEngines = {
@@ -43,6 +45,35 @@ local WebBrowser = WidgetContainer:extend{
 local DEFAULT_TIMEOUT = 20
 local DEFAULT_MAXTIME = 60
 local fetch_markdown
+
+local function removePath(path)
+    local attributes = lfs.attributes(path)
+    if not attributes then
+        return true
+    end
+
+    if attributes.mode == "directory" then
+        for entry in lfs.dir(path) do
+            if entry ~= "." and entry ~= ".." then
+                local ok, err = removePath(path .. "/" .. entry)
+                if not ok then
+                    return false, err
+                end
+            end
+        end
+        local ok, err = lfs.rmdir(path)
+        if not ok then
+            return false, err
+        end
+        return true
+    end
+
+    local ok, err = os.remove(path)
+    if not ok then
+        return false, err
+    end
+    return true
+end
 
 local function trim_text(value)
     return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -64,6 +95,78 @@ local function is_html_file(path)
         return true
     end
     return false
+end
+
+function WebBrowser:removeSdrDirectoryForPath(file_path)
+    if not is_html_file(file_path) then
+        return
+    end
+    local directory, filename = file_path:match("^(.*)/([^/]+)$")
+    if not filename then
+        filename = file_path
+        directory = ""
+    end
+    local name_without_ext = filename
+    local base_name, _ = util.splitFileNameSuffix(filename)
+    if base_name and base_name ~= "" then
+        name_without_ext = base_name
+    end
+    local sdr_name = name_without_ext .. ".sdr"
+    local sdr_path
+    if directory ~= "" then
+        sdr_path = directory .. "/" .. sdr_name
+    else
+        sdr_path = sdr_name
+    end
+    local ok, removed, err = pcall(removePath, sdr_path)
+    if not ok then
+        logger.warn("webbrowser", "exception while removing .sdr directory", sdr_path, removed)
+        return
+    end
+    if not removed and err then
+        logger.warn("webbrowser", "failed to remove .sdr directory", sdr_path, err)
+    end
+end
+
+function WebBrowser:getLastQueryStore()
+    if not self.last_query_store then
+        self.last_query_store = LastQueryStore:new()
+    end
+    return self.last_query_store
+end
+
+function WebBrowser:hasStoredLastQuery()
+    local store = self:getLastQueryStore()
+    if not store then
+        return false
+    end
+    local data = store:get()
+    if not data or type(data) ~= "table" then
+        return false
+    end
+    return type(data.items) == "table" and #data.items > 0
+end
+
+function WebBrowser:showLastQueryResults()
+    local store = self:getLastQueryStore()
+    if not store then
+        return
+    end
+    local data = store:get()
+    if not data or type(data) ~= "table" or type(data.items) ~= "table" or #data.items == 0 then
+        UIManager:show(InfoMessage:new {
+            text = _("No recent searches."),
+            timeout = 2,
+        })
+        return
+    end
+
+    local query = data.query or ""
+    local items = data.items or {}
+    local engine_display = data.engine_display or self:getSearchEngineDisplayName()
+    local engine_name = data.engine_name or self:getSelectedEngineName()
+
+    self:showResultsMenu(query, items, engine_display, engine_name)
 end
 
 local function copy_file(source_path, destination_path)
@@ -469,6 +572,7 @@ function WebBrowser:openMuPDFDocument(file_path)
         FileManager:openFile(file_path)
         return
     end
+    self:removeSdrDirectoryForPath(file_path)
     local provider = DocumentRegistry:getProviderFromKey("mupdf")
     if self.ui.document then
         self.ui:showReader(file_path, provider, true, true)
@@ -482,9 +586,10 @@ function WebBrowser:openCreDocument(file_path)
         return
     end
     if not is_html_file(file_path) then
-    FileManager:openFile(file_path)
+        FileManager:openFile(file_path)
         return
     end
+    self:removeSdrDirectoryForPath(file_path)
     local provider = DocumentRegistry:getProviderFromKey("crengine")
     if not provider then
         UIManager:show(InfoMessage:new {
@@ -720,6 +825,7 @@ function WebBrowser:init()
     self.bookmarks_store = BookmarksStore:new()
     self.bookmarks_dialog = nil
     self.last_results = nil
+    self.last_query_store = nil
     self.mupdf_renderer = nil
     self.mu_pdf_link_handler_registered = false
     if self:isMuPDFRender() or self:isCreRender() then
@@ -818,9 +924,7 @@ function WebBrowser:addToMainMenu(menu_items)
         sorting_hint = "search",
         text = _("Web Browser"),
         callback = function()
-            NetworkMgr:runWhenOnline(function()
-                self:showSearchDialog()
-            end)
+            self:showSearchDialog()
         end,
     }
 end
@@ -872,7 +976,9 @@ function WebBrowser:showSearchDialog()
                         end
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
-                        self:performSearch(query)
+                        NetworkMgr:runWhenOnline(function()
+                            self:performSearch(query)
+                        end)
                     end,
                 },
                 {
@@ -890,11 +996,24 @@ function WebBrowser:showSearchDialog()
 
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
-                        self:openDirectUrl(url_input)
+                        NetworkMgr:runWhenOnline(function()
+                            self:openDirectUrl(url_input)
+                        end)
                     end,
                 },
             },
             {
+                {
+                    text = _("Last Search"),
+                    enabled_func = function()
+                        return self:hasStoredLastQuery()
+                    end,
+                    callback = function()
+                        UIManager:close(self.search_dialog)
+                        self.search_dialog = nil
+                        self:showLastQueryResults()
+                    end,
+                },
                 {
                     text = _("Bookmarks"),
                     callback = function()
@@ -957,6 +1076,11 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
         engine_display = display_name,
         engine_name = resolved_engine_name,
     }
+
+    local store = self:getLastQueryStore()
+    if store then
+        store:set(self.last_results)
+    end
 
     local item_table = {}
     for _, result in ipairs(results) do
