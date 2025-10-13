@@ -28,6 +28,7 @@ return {
     keep_old_website_files = true, -- for mupdf and cre render types.
     download_images = false, --for mupdf and cre  render types.
     use_stylesheets =false, --for mupdf and cre render types: using stylesheets sometimes results in unreadable text. 
+    history_max_entries = 10, -- maximum number of saved search history entries
     
     supported_file_types = { -- entries outside this list are saved / opened with a fallback .html extension.
         "epub3",

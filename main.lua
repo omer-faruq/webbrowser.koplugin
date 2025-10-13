@@ -27,7 +27,7 @@ local config_loaded, config_result = pcall(require, "webbrowser_configuration")
 local CONFIG = config_loaded and config_result or {}
 local CONFIG_MISSING = not config_loaded
 local BookmarksStore = require("webbrowser_bookmarks")
-local LastQueryStore = require("webbrowser_lastquery")
+local SearchHistoryStore = require("webbrowser_history")
 local Random = require("random")
 
 local SearchEngines = {
@@ -36,6 +36,7 @@ local SearchEngines = {
 }
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
+local DEFAULT_HISTORY_LIMIT = 10
 
 local WebBrowser = WidgetContainer:extend{
     name = "webbrowser",
@@ -128,45 +129,243 @@ function WebBrowser:removeSdrDirectoryForPath(file_path)
     end
 end
 
-function WebBrowser:getLastQueryStore()
-    if not self.last_query_store then
-        self.last_query_store = LastQueryStore:new()
+function WebBrowser:getSearchHistoryStore()
+    if not self.search_history_store then
+        self.search_history_store = SearchHistoryStore:new {
+            max_entries = self:getSearchHistoryLimit(),
+        }
     end
-    return self.last_query_store
+    return self.search_history_store
 end
 
-function WebBrowser:hasStoredLastQuery()
-    local store = self:getLastQueryStore()
+function WebBrowser:hasSearchHistoryEntries()
+    local store = self:getSearchHistoryStore()
     if not store then
         return false
     end
-    local data = store:get()
-    if not data or type(data) ~= "table" then
-        return false
-    end
-    return type(data.items) == "table" and #data.items > 0
+    return store:hasEntries()
 end
 
-function WebBrowser:showLastQueryResults()
-    local store = self:getLastQueryStore()
+function WebBrowser:getSearchHistoryLimit()
+    local limit = CONFIG.history_max_entries
+    if type(limit) == "string" then
+        limit = tonumber(limit)
+    end
+    if type(limit) == "number" then
+        local floored = math.floor(limit)
+        if floored > 0 then
+            return floored
+        end
+    end
+    return DEFAULT_HISTORY_LIMIT
+end
+
+function WebBrowser:addSearchHistoryEntry(query, results, engine_display, engine_name, timestamp)
+    local store = self:getSearchHistoryStore()
     if not store then
         return
     end
-    local data = store:get()
-    if not data or type(data) ~= "table" or type(data.items) ~= "table" or #data.items == 0 then
+    if type(results) ~= "table" or #results == 0 then
+        return
+    end
+    local final_timestamp = timestamp
+    if type(final_timestamp) ~= "number" then
+        final_timestamp = os.time()
+    end
+    local entry = {
+        query = query,
+        engine_display = engine_display,
+        engine_name = engine_name,
+        timestamp = final_timestamp,
+        results = results,
+    }
+    local ok, err = pcall(function()
+        store:addEntry(entry)
+    end)
+    if not ok and err then
+        logger.warn("webbrowser", "failed to add search history entry", err)
+    end
+end
+
+function WebBrowser:showSearchHistoryEntry(entry)
+    if not entry or type(entry) ~= "table" then
+        return
+    end
+    local results = entry.results
+    if type(results) ~= "table" or #results == 0 then
         UIManager:show(InfoMessage:new {
-            text = _("No recent searches."),
+            text = _("No stored results for this entry."),
             timeout = 2,
         })
         return
     end
 
-    local query = data.query or ""
-    local items = data.items or {}
-    local engine_display = data.engine_display or self:getSearchEngineDisplayName()
-    local engine_name = data.engine_name or self:getSelectedEngineName()
+    local query = entry.query or ""
+    local engine_display = entry.engine_display or self:getSearchEngineDisplayName()
+    local engine_name = entry.engine_name or self:getSelectedEngineName()
 
-    self:showResultsMenu(query, items, engine_display, engine_name)
+    self:showResultsMenu(query, results, engine_display, engine_name, { skip_history_record = true })
+end
+
+function WebBrowser:showSearchHistoryDialog()
+    if self.search_history_dialog then
+        UIManager:close(self.search_history_dialog)
+        self.search_history_dialog = nil
+    end
+
+    local store = self:getSearchHistoryStore()
+    local entries = store:getAll()
+    local selection = {}
+
+    local dialog
+    local function clearDialog()
+        self.search_history_dialog = nil
+    end
+
+    local function refreshDialog()
+        UIManager:nextTick(function()
+            self:showSearchHistoryDialog()
+        end)
+    end
+
+    local function formatTimestamp(value)
+        if type(value) == "number" then
+            local formatted = os.date("%Y-%m-%d %H:%M:%S", value)
+            if type(formatted) == "string" then
+                return formatted
+            end
+            return ""
+        end
+        if type(value) == "string" and value ~= "" then
+            return value
+        end
+        return ""
+    end
+
+    local buttons = {
+        {
+            {
+                text = _("Delete"),
+                enabled = #entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected_ids = {}
+                    for _, entry in ipairs(entries) do
+                        local entry_id = entry and entry.id
+                        if entry_id and selection[entry_id] then
+                            table.insert(selected_ids, entry_id)
+                        end
+                    end
+                    if #selected_ids == 0 then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select at least one history entry to delete."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    local removed = store:removeByIds(selected_ids)
+                    if removed > 0 then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Selected history entries deleted."),
+                            timeout = 2,
+                        })
+                    end
+                    dialog:onClose()
+                    clearDialog()
+                    refreshDialog()
+                end,
+            },
+            {
+                text = _("Open"),
+                enabled = #entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected_entry
+                    for _, entry in ipairs(entries) do
+                        local entry_id = entry and entry.id
+                        if entry_id and selection[entry_id] then
+                            selected_entry = entry
+                            break
+                        end
+                    end
+                    if not selected_entry then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select a history entry to open."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    dialog:onClose()
+                    clearDialog()
+                    UIManager:nextTick(function()
+                        self:showSearchHistoryEntry(selected_entry)
+                    end)
+                end,
+            },
+            {
+                text = _("Close"),
+                callback = function()
+                    if dialog then
+                        dialog:onClose()
+                        clearDialog()
+                    end
+                end,
+            },
+        },
+    }
+
+    dialog = ButtonDialog:new {
+        title = _("History"),
+        buttons = buttons,
+        tap_close_callback = clearDialog,
+        rows_per_page = {6, 8},
+    }
+
+    self.search_history_dialog = dialog
+
+    if #entries == 0 then
+        local empty_widget = CheckButton:new {
+            text = _("No search history saved yet."),
+            parent = dialog,
+            checkable = false,
+            enabled = false,
+        }
+        empty_widget.not_focusable = true
+        dialog:addWidget(empty_widget)
+    else
+        for _, entry in ipairs(entries) do
+            local entry_id = entry and entry.id
+            if entry_id then
+                selection[entry_id] = false
+                local query_text = entry.query
+                if not query_text or query_text == "" then
+                    query_text = _("(No search term)")
+                end
+                local timestamp_text = formatTimestamp(entry.timestamp)
+                local label
+                if timestamp_text ~= "" then
+                    label = string.format("%s • %s", query_text, timestamp_text)
+                else
+                    label = query_text
+                end
+                local checkbox
+                checkbox = CheckButton:new {
+                    text = label,
+                    parent = dialog,
+                    callback = function()
+                        selection[entry_id] = checkbox.checked
+                    end,
+                }
+                dialog:addWidget(checkbox)
+            end
+        end
+    end
+
+    UIManager:show(dialog)
 end
 
 local function copy_file(source_path, destination_path)
@@ -825,7 +1024,8 @@ function WebBrowser:init()
     self.bookmarks_store = BookmarksStore:new()
     self.bookmarks_dialog = nil
     self.last_results = nil
-    self.last_query_store = nil
+    self.search_history_store = nil
+    self.search_history_dialog = nil
     self.mupdf_renderer = nil
     self.mu_pdf_link_handler_registered = false
     if self:isMuPDFRender() or self:isCreRender() then
@@ -1004,14 +1204,14 @@ function WebBrowser:showSearchDialog()
             },
             {
                 {
-                    text = _("Last Search"),
+                    text = _("History"),
                     enabled_func = function()
-                        return self:hasStoredLastQuery()
+                        return self:hasSearchHistoryEntries()
                     end,
                     callback = function()
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
-                        self:showLastQueryResults()
+                        self:showSearchHistoryDialog()
                     end,
                 },
                 {
@@ -1061,7 +1261,7 @@ function WebBrowser:performSearch(query)
     self:showResultsMenu(query, results, engine_display, engine_name)
 end
 
-function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
+function WebBrowser:showResultsMenu(query, results, engine_display, engine_name, options)
     if self.results_menu then
         UIManager:close(self.results_menu)
         self.results_menu = nil
@@ -1069,6 +1269,8 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
 
     local display_name = engine_display or self:getSearchEngineDisplayName()
     local resolved_engine_name = engine_name or self:getSelectedEngineName()
+    local skip_history_record = options and options.skip_history_record
+    local provided_timestamp = options and options.timestamp
 
     self.last_results = {
         query = query,
@@ -1077,9 +1279,8 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name)
         engine_name = resolved_engine_name,
     }
 
-    local store = self:getLastQueryStore()
-    if store then
-        store:set(self.last_results)
+    if not skip_history_record then
+        self:addSearchHistoryEntry(query, results, display_name, resolved_engine_name, provided_timestamp)
     end
 
     local item_table = {}

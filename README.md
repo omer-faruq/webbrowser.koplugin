@@ -3,7 +3,7 @@
 Experience distraction-free browsing on e-ink devices with a KOReader-native workflow. Choose between Markdown, CRE, or MuPDF rendering to balance readability and fidelity while keeping navigation lightweight.
 
 ## Features
-- **Search dialog**: Launch queries directly from KOReader using a custom dialog tailored for e-ink interaction, and reuse the **Last search** button to retry your most recent query results without retyping it.
+- **Search dialog**: Launch queries directly from KOReader using a custom dialog tailored for e-ink interaction, and open the **History** list to revisit recent searches without retyping them.
 - **Curated results list**: Browse plaintext summaries before opening pages, reducing bandwidth and rendering overhead. Long-press a result to open the context menu for quick actions such as saving a bookmark.
 - **Flexible rendering modes**: Switch between Markdown, CRE, and MuPDF to match your preferred balance of readability and page fidelity.
 - **Direct URL navigation**: Use the Go button in the search dialog to open any URL without performing a search first.
