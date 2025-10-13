@@ -11,6 +11,7 @@ local DEFAULT_TIMEOUT = 15
 local DEFAULT_MAXTIME = 30
 local DEFAULT_PAGE_SIZE = 10
 local MAX_RESULTS_ALLOWED = 10
+local MAX_TOTAL_RESULTS = 100
 
 local function build_query_url(base_url, params)
     local query_parts = {}
@@ -142,8 +143,8 @@ function GoogleApi.search(query, opts)
     local max_results = settings.max_results or MAX_RESULTS_ALLOWED
     if max_results < 1 then
         max_results = 1
-    elseif max_results > MAX_RESULTS_ALLOWED then
-        max_results = MAX_RESULTS_ALLOWED
+    elseif max_results > MAX_TOTAL_RESULTS then
+        max_results = MAX_TOTAL_RESULTS
     end
 
     local page_size = settings.page_size or DEFAULT_PAGE_SIZE
@@ -156,49 +157,94 @@ function GoogleApi.search(query, opts)
         page_size = max_results
     end
 
-    local params = {
+    local common_params = {
         key = api_key,
         cx = cx,
         q = query,
-        num = page_size,
     }
 
     local language = settings.language or settings.hl
     if language and language ~= "" then
-        params.hl = language
+        common_params.hl = language
     end
 
     local safe = settings.safe or settings.safesearch
     if safe and safe ~= "" then
-        params.safe = safe
+        common_params.safe = safe
     end
 
-    local start_index = settings.offset
-    if type(start_index) == "number" and start_index > 0 then
-        params.start = start_index + 1
-    elseif type(settings.start) == "number" and settings.start > 0 then
-        params.start = settings.start
+    local start_param = 1
+    if type(settings.start) == "number" and settings.start > 0 then
+        start_param = math.floor(settings.start)
+    elseif type(settings.offset) == "number" and settings.offset >= 0 then
+        start_param = math.floor(settings.offset) + 1
     end
-
-    local url = build_query_url(endpoint, params)
+    if start_param < 1 then
+        start_param = 1
+    elseif start_param > MAX_TOTAL_RESULTS then
+        start_param = MAX_TOTAL_RESULTS
+    end
 
     local headers = {
         ["Accept"] = "application/json",
         ["User-Agent"] = settings.user_agent or "Mozilla/5.0 (compatible; KOReader)",
     }
 
-    local body, err, err_body = fetch(url, headers, settings.timeout, settings.maxtime)
-    if not body then
-        local message = extract_error_message(err_body, err)
-        return nil, message
+    local aggregated_results = {}
+    local remaining = max_results
+    local current_start = start_param
+
+    while remaining > 0 and current_start <= MAX_TOTAL_RESULTS do
+        local desired_batch = math.min(page_size, remaining)
+        if current_start + desired_batch - 1 > MAX_TOTAL_RESULTS then
+            desired_batch = math.max(1, MAX_TOTAL_RESULTS - current_start + 1)
+        end
+
+        local params = {}
+        for key, value in pairs(common_params) do
+            params[key] = value
+        end
+        params.num = desired_batch
+        params.start = current_start
+
+        local url = build_query_url(endpoint, params)
+        local body, err, err_body = fetch(url, headers, settings.timeout, settings.maxtime)
+        if not body then
+            if #aggregated_results > 0 then
+                break
+            end
+            local message = extract_error_message(err_body, err)
+            return nil, message
+        end
+
+        local results, parse_err = parse_results(body, desired_batch)
+        if not results then
+            if #aggregated_results > 0 then
+                break
+            end
+            return nil, parse_err
+        end
+
+        if #results == 0 then
+            break
+        end
+
+        for _, item in ipairs(results) do
+            aggregated_results[#aggregated_results + 1] = item
+            if #aggregated_results >= max_results then
+                break
+            end
+        end
+
+        if #results < desired_batch or #aggregated_results >= max_results then
+            break
+        end
+
+        remaining = max_results - #aggregated_results
+        current_start = current_start + desired_batch
     end
 
-    local results, parse_err = parse_results(body, max_results)
-    if not results then
-        return nil, parse_err
-    end
-
-    return results
+    return aggregated_results
 end
 
 return GoogleApi
