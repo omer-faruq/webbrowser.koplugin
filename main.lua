@@ -1770,7 +1770,7 @@ function WebBrowser:getBookmarks()
     return entries
 end
 
-function WebBrowser:showAddBookmarkDialog(parent_dialog, clearDialogCallback)
+function WebBrowser:showAddBookmarkDialog(parent_dialog, clearDialogCallback, filter_text)
     local add_dialog
     add_dialog = MultiInputDialog:new {
         title = _("Add Bookmark"),
@@ -1851,7 +1851,7 @@ function WebBrowser:showAddBookmarkDialog(parent_dialog, clearDialogCallback)
                         end
 
                         UIManager:nextTick(function()
-                            self:showBookmarksDialog()
+                            self:showBookmarksDialog(filter_text)
                         end)
                     end,
                 },
@@ -1863,7 +1863,7 @@ function WebBrowser:showAddBookmarkDialog(parent_dialog, clearDialogCallback)
     add_dialog:onShowKeyboard()
 end
 
-function WebBrowser:showEditBookmarkDialog(parent_dialog, clearDialogCallback, entry, bookmarks, store)
+function WebBrowser:showEditBookmarkDialog(parent_dialog, clearDialogCallback, entry, bookmarks, store, filter_text)
     if not entry or not entry.id then
         return
     end
@@ -1943,7 +1943,7 @@ function WebBrowser:showEditBookmarkDialog(parent_dialog, clearDialogCallback, e
                         end
 
                         UIManager:nextTick(function()
-                            self:showBookmarksDialog()
+                            self:showBookmarksDialog(filter_text)
                         end)
                     end,
                 },
@@ -2032,7 +2032,7 @@ function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
     end)
 end
 
-function WebBrowser:showBookmarksDialog()
+function WebBrowser:showBookmarksDialog(filter_text)
     if self.bookmarks_dialog then
         UIManager:close(self.bookmarks_dialog)
         self.bookmarks_dialog = nil
@@ -2041,6 +2041,39 @@ function WebBrowser:showBookmarksDialog()
     local store = self:getBookmarksStore()
     local bookmarks = self:getBookmarks()
     local selection = {}
+
+    if type(filter_text) == "string" then
+        filter_text = trim_text(filter_text)
+        if filter_text == "" then
+            filter_text = nil
+        end
+    else
+        filter_text = nil
+    end
+
+    local lower_filter = filter_text and filter_text:lower()
+
+    local function matchesFilter(entry)
+        if not lower_filter then
+            return true
+        end
+        local title = (entry.title or ""):lower()
+        local source = (entry.source_url or entry.gateway_url or entry.url or ""):lower()
+        if title ~= "" and title:find(lower_filter, 1, true) then
+            return true
+        end
+        if source ~= "" and source:find(lower_filter, 1, true) then
+            return true
+        end
+        return false
+    end
+
+    local visible_bookmarks = {}
+    for _, entry in ipairs(bookmarks) do
+        if entry and matchesFilter(entry) then
+            table.insert(visible_bookmarks, entry)
+        end
+    end
 
     local dialog
     local function clearDialog()
@@ -2051,7 +2084,7 @@ function WebBrowser:showBookmarksDialog()
         {
             {
                 text = _("Delete"),
-                enabled = #bookmarks > 0,
+                enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
                         return
@@ -2079,19 +2112,19 @@ function WebBrowser:showBookmarksDialog()
                     dialog:onClose()
                     clearDialog()
                     UIManager:nextTick(function()
-                        self:showBookmarksDialog()
+                        self:showBookmarksDialog(filter_text)
                     end)
                 end,
             },
             {
                 text = _("Open"),
-                enabled = #bookmarks > 0,
+                enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
                         return
                     end
                     local selected
-                    for _, entry in ipairs(bookmarks) do
+                    for _, entry in ipairs(visible_bookmarks) do
                         if entry and entry.id and selection[entry.id] then
                             selected = entry
                             break
@@ -2112,14 +2145,25 @@ function WebBrowser:showBookmarksDialog()
                 end,
             },
             {
+                text = _("Close"),
+                callback = function()
+                    if dialog then
+                        dialog:onClose()
+                        clearDialog()
+                    end
+                end,
+            },
+        },
+        {
+            {
                 text = _("Edit"),
-                enabled = #bookmarks > 0,
+                enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
                         return
                     end
                     local selected
-                    for _, entry in ipairs(bookmarks) do
+                    for _, entry in ipairs(visible_bookmarks) do
                         if entry and entry.id and selection[entry.id] then
                             selected = entry
                             break
@@ -2132,22 +2176,64 @@ function WebBrowser:showBookmarksDialog()
                         })
                         return
                     end
-                    self:showEditBookmarkDialog(dialog, clearDialog, selected, bookmarks, store)
+                    self:showEditBookmarkDialog(dialog, clearDialog, selected, bookmarks, store, filter_text)
                 end,
             },
             {
                 text = _("Add"),
                 callback = function()
-                    self:showAddBookmarkDialog(dialog, clearDialog)
+                    self:showAddBookmarkDialog(dialog, clearDialog, filter_text)
                 end,
             },
             {
-                text = _("Close"),
+                text = _("Filter"),
                 callback = function()
-                    if dialog then
-                        dialog:onClose()
-                        clearDialog()
-                    end
+                    local filter_dialog
+                    filter_dialog = InputDialog:new {
+                        title = _("Filter Bookmarks"),
+                        input = filter_text or "",
+                        buttons = {
+                            {
+                                {
+                                    text = _("Cancel"),
+                                    callback = function()
+                                        UIManager:close(filter_dialog)
+                                    end,
+                                },
+                                {
+                                    text = _("Clear Filter"),
+                                    callback = function()
+                                        UIManager:close(filter_dialog)
+                                        if dialog then
+                                            dialog:onClose()
+                                            clearDialog()
+                                        end
+                                        UIManager:nextTick(function()
+                                            self:showBookmarksDialog()
+                                        end)
+                                    end,
+                                },
+                                {
+                                    text = _("Filter"),
+                                    is_enter_default = true,
+                                    callback = function()
+                                        local value = trim_text(filter_dialog:getInputText() or "")
+                                        UIManager:close(filter_dialog)
+                                        if dialog then
+                                            dialog:onClose()
+                                            clearDialog()
+                                        end
+                                        UIManager:nextTick(function()
+                                            self:showBookmarksDialog(value ~= "" and value or nil)
+                                        end)
+                                    end,
+                                },
+                            },
+                        },
+                    }
+
+                    UIManager:show(filter_dialog)
+                    filter_dialog:onShowKeyboard()
                 end,
             },
         },
@@ -2162,21 +2248,28 @@ function WebBrowser:showBookmarksDialog()
 
     self.bookmarks_dialog = dialog
 
-    local bookmark_container = VerticalGroup:new{}
+    local bookmark_container = VerticalGroup:new {}
 
-    if #bookmarks == 0 then
-        local empty_widget = CheckButton:new {
-            text = _("No bookmarks saved yet."),
-            parent = dialog,
-            checkable = false,
-            enabled = false,
-        }
-        empty_widget.not_focusable = true
-        bookmark_container[1] = empty_widget
-    else
-        local threshold_rows = 10
+    local function buildBookmarksGroup()
+        if #visible_bookmarks == 0 then
+            local empty_text
+            if filter_text then
+                empty_text = _("No bookmarks match the filter.")
+            else
+                empty_text = _("No bookmarks saved yet.")
+            end
+            local empty_widget = CheckButton:new {
+                text = empty_text,
+                parent = dialog,
+                checkable = false,
+                enabled = false,
+            }
+            empty_widget.not_focusable = true
+            return empty_widget
+        end
+
         local bookmarks_group = VerticalGroup:new{}
-        for _, entry in ipairs(bookmarks) do
+        for _, entry in ipairs(visible_bookmarks) do
             local id = entry.id
             local title = entry.title
             if not title or title == "" then
@@ -2200,27 +2293,30 @@ function WebBrowser:showBookmarksDialog()
             }
             bookmarks_group[#bookmarks_group + 1] = checkbox
         end
-        local max_height_ratio = 0.8
-        local screen_height = Screen:getHeight()
-        local max_height = math.floor(screen_height * max_height_ratio)
-        local content_size = bookmarks_group:getSize()
-        local needs_scroll = (#bookmarks > threshold_rows) or (content_size.h > max_height)
+        return bookmarks_group
+    end
 
-        if needs_scroll then
-            local final_height = math.min(content_size.h, max_height)
-            local scrollable = ScrollableContainer:new {
+    local content_widget = buildBookmarksGroup()
+
+    local screen_height = Screen:getHeight()
+    local max_height = math.floor(screen_height * 0.7)
+
+    local wrapped_widget
+    if content_widget.getSize then
+        local size = content_widget:getSize()
+        if size.h > max_height then
+            wrapped_widget = ScrollableContainer:new {
                 dimen = Geom:new {
                     w = dialog.buttontable:getSize().w + ScrollableContainer:getScrollbarWidth(),
-                    h = final_height,
+                    h = max_height,
                 },
                 show_parent = dialog,
-                bookmarks_group,
+                content_widget,
             }
-            bookmark_container[1] = scrollable
-        else
-            bookmark_container[1] = bookmarks_group
         end
     end
+
+    bookmark_container[1] = wrapped_widget or content_widget
 
     if bookmark_container[1] then
         dialog:addWidget(bookmark_container[1])
