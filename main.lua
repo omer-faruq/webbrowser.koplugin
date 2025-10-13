@@ -3,6 +3,11 @@ local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local ButtonDialog = require("ui/widget/buttondialog")
+local Geom = require("ui/geometry")
+local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local Device = require("device")
+local Screen = Device.screen
 local CheckButton = require("ui/widget/checkbutton")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local UIManager = require("ui/uimanager")
@@ -327,6 +332,8 @@ function WebBrowser:showSearchHistoryDialog()
 
     self.search_history_dialog = dialog
 
+    local history_container = VerticalGroup:new{}
+
     if #entries == 0 then
         local empty_widget = CheckButton:new {
             text = _("No search history saved yet."),
@@ -335,8 +342,10 @@ function WebBrowser:showSearchHistoryDialog()
             enabled = false,
         }
         empty_widget.not_focusable = true
-        dialog:addWidget(empty_widget)
+        history_container[1] = empty_widget
     else
+        local threshold_rows = 10
+        local history_group = VerticalGroup:new{}
         for _, entry in ipairs(entries) do
             local entry_id = entry and entry.id
             if entry_id then
@@ -360,9 +369,34 @@ function WebBrowser:showSearchHistoryDialog()
                         selection[entry_id] = checkbox.checked
                     end,
                 }
-                dialog:addWidget(checkbox)
+                history_group[#history_group + 1] = checkbox
             end
         end
+
+        local max_height_ratio = 0.8
+        local screen_height = Screen:getHeight()
+        local max_height = math.floor(screen_height * max_height_ratio)
+        local content_size = history_group:getSize()
+        local needs_scroll = (#entries > threshold_rows) or (content_size.h > max_height)
+
+        if needs_scroll then
+            local final_height = math.min(content_size.h, max_height)
+            local scrollable = ScrollableContainer:new {
+                dimen = Geom:new {
+                    w = dialog.buttontable:getSize().w + ScrollableContainer:getScrollbarWidth(),
+                    h = final_height,
+                },
+                show_parent = dialog,
+                history_group,
+            }
+            history_container[1] = scrollable
+        else
+            history_container[1] = history_group
+        end
+    end
+
+    if history_container[1] then
+        dialog:addWidget(history_container[1])
     end
 
     UIManager:show(dialog)
@@ -2128,6 +2162,8 @@ function WebBrowser:showBookmarksDialog()
 
     self.bookmarks_dialog = dialog
 
+    local bookmark_container = VerticalGroup:new{}
+
     if #bookmarks == 0 then
         local empty_widget = CheckButton:new {
             text = _("No bookmarks saved yet."),
@@ -2136,8 +2172,10 @@ function WebBrowser:showBookmarksDialog()
             enabled = false,
         }
         empty_widget.not_focusable = true
-        dialog:addWidget(empty_widget)
+        bookmark_container[1] = empty_widget
     else
+        local threshold_rows = 10
+        local bookmarks_group = VerticalGroup:new{}
         for _, entry in ipairs(bookmarks) do
             local id = entry.id
             local title = entry.title
@@ -2160,8 +2198,32 @@ function WebBrowser:showBookmarksDialog()
                     selection[id] = checkbox.checked
                 end,
             }
-            dialog:addWidget(checkbox)
+            bookmarks_group[#bookmarks_group + 1] = checkbox
         end
+        local max_height_ratio = 0.8
+        local screen_height = Screen:getHeight()
+        local max_height = math.floor(screen_height * max_height_ratio)
+        local content_size = bookmarks_group:getSize()
+        local needs_scroll = (#bookmarks > threshold_rows) or (content_size.h > max_height)
+
+        if needs_scroll then
+            local final_height = math.min(content_size.h, max_height)
+            local scrollable = ScrollableContainer:new {
+                dimen = Geom:new {
+                    w = dialog.buttontable:getSize().w + ScrollableContainer:getScrollbarWidth(),
+                    h = final_height,
+                },
+                show_parent = dialog,
+                bookmarks_group,
+            }
+            bookmark_container[1] = scrollable
+        else
+            bookmark_container[1] = bookmarks_group
+        end
+    end
+
+    if bookmark_container[1] then
+        dialog:addWidget(bookmark_container[1])
     end
 
     UIManager:show(dialog)
