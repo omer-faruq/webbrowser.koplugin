@@ -1829,6 +1829,98 @@ function WebBrowser:showAddBookmarkDialog(parent_dialog, clearDialogCallback)
     add_dialog:onShowKeyboard()
 end
 
+function WebBrowser:showEditBookmarkDialog(parent_dialog, clearDialogCallback, entry, bookmarks, store)
+    if not entry or not entry.id then
+        return
+    end
+
+    local edit_dialog
+    edit_dialog = MultiInputDialog:new {
+        title = _("Edit Bookmark"),
+        fields = {
+            {
+                hint = _("Title"),
+                text = entry.title or "",
+            },
+            {
+                hint = _("URL"),
+                text = entry.source_url or entry.gateway_url or entry.url or "",
+            },
+        },
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(edit_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        local fields = edit_dialog:getFields()
+                        local title_input = trim_text(fields[1])
+                        local url_input = trim_text(fields[2])
+
+                        if url_input == "" then
+                            UIManager:show(InfoMessage:new {
+                                text = _("Please enter a URL."),
+                                timeout = 2,
+                            })
+                            return
+                        end
+
+                        local normalized_input = Utils.ensure_markdown_gateway(url_input)
+
+                        for _, existing in ipairs(bookmarks) do
+                            if existing and existing.id and existing.id ~= entry.id then
+                                local existing_source = existing.source_url or existing.gateway_url or existing.url
+                                local normalized_existing_source = existing_source and Utils.ensure_markdown_gateway(existing_source)
+                                if (existing_source and (existing_source == url_input or existing_source == normalized_input))
+                                    or (normalized_existing_source and normalized_existing_source == normalized_input) then
+                                    UIManager:show(InfoMessage:new {
+                                        text = _("Bookmark already exists."),
+                                        timeout = 2,
+                                    })
+                                    return
+                                end
+                            end
+                        end
+
+                        local display_title = title_input ~= "" and title_input or url_input
+                        entry.title = display_title
+                        entry.source_url = url_input
+                        entry.gateway_url = nil
+
+                        store:setAll(bookmarks)
+
+                        UIManager:close(edit_dialog)
+                        UIManager:show(InfoMessage:new {
+                            text = _("Bookmark updated."),
+                            timeout = 2,
+                        })
+
+                        if parent_dialog then
+                            parent_dialog:onClose()
+                            if clearDialogCallback then
+                                clearDialogCallback()
+                            end
+                        end
+
+                        UIManager:nextTick(function()
+                            self:showBookmarksDialog()
+                        end)
+                    end,
+                },
+            },
+        },
+    }
+
+    UIManager:show(edit_dialog)
+    edit_dialog:onShowKeyboard()
+end
+
 function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
     if not entry then
         return
@@ -1983,6 +2075,30 @@ function WebBrowser:showBookmarksDialog()
                     UIManager:nextTick(function()
                         self:openBookmarkEntry(selected, bookmarks, store)
                     end)
+                end,
+            },
+            {
+                text = _("Edit"),
+                enabled = #bookmarks > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected
+                    for _, entry in ipairs(bookmarks) do
+                        if entry and entry.id and selection[entry.id] then
+                            selected = entry
+                            break
+                        end
+                    end
+                    if not selected then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select a bookmark to edit."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    self:showEditBookmarkDialog(dialog, clearDialog, selected, bookmarks, store)
                 end,
             },
             {
