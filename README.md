@@ -15,6 +15,7 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **DuckDuckGo HTML search endpoint** (`https://duckduckgo.com/html/`): Provides ad-free search results optimized for lightweight clients.
 - **Jina AI Markdown gateway** (`https://r.jina.ai/`): Converts source web pages to Markdown before they are shown inside KOReader.
 - **Brave Search API** (`https://api.search.brave.com/res/v1/web/search`): Supplies JSON search results when the Brave API engine is enabled.
+- **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): Returns up to ten results per query with generous free-tier limits for the Google engine.
 
 ## Search Engine Reliability
 - **DuckDuckGo rate limiting**: While convenient, the HTML endpoint is prone to aggressive throttling and may flag repeated traffic as a bot, causing searches to fail after short sessions.
@@ -24,6 +25,11 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **Obtain an API key**: Create or sign in to your Brave account and generate a key at [Brave Search Dashboard](https://api-dashboard.search.brave.com/app/dashboard).
 - **Configure the plugin**: Store the issued key in `plugins/webbrowser.koplugin/webbrowser_configuration.lua` under `engines.brave_api.api_key` (or your preferred secure storage method).
 - **Free-tier limits**: 1 request per second and up to 2,000 queries per month. Consider caching or using DuckDuckGo for lighter usage to stay within the quota.
+
+## Google Custom Search Setup
+- **Review the guide**: Follow the step-by-step instructions on the [Google Custom Search API Setup (Free Tier)](https://github.com/omer-faruq/webbrowser.koplugin/wiki/Google-Custom-Search-API-Setup-(Free-Tier)) wiki page to create a free programmable search engine and obtain your `api_key` and `cx` values.
+- **Understand the limits**: The free tier covers up to 100 queries per day, with each request returning a maximum of ten results. No credit card is required for this quota.
+- **Configure the plugin**: Add your credentials to `webbrowser_configuration.lua` under `engines.google_api` to enable the Google engine inside KOReader.
 
 ## Rendering Modes
 - **Markdown**: Fetches content through the Jina AI Markdown gateway and displays it in the lightweight Markdown viewer.

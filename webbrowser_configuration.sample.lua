@@ -21,6 +21,16 @@ return {
             max_results = 20,
             page_size = 20,
         },
+        google_api = { --setup instructions: https://github.com/omer-faruq/webbrowser.koplugin/wiki/Google-Custom-Search-API-Setup-(Free-Tier)
+            name= "google_api",
+            display_name = "Google API",
+            base_url = "https://customsearch.googleapis.com/customsearch/v1",
+            api_key = "YOUR_API_KEY_HERE",
+            cx = "YOUR_CX_HERE",
+            language = "en",
+            max_results = 10,
+            page_size = 10,
+        }
     },
 
     render_type = "cre", -- options: "cre","mupdf", "markdown"  mupdf: pdf-like , cre: epub-like experience

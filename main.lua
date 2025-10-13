@@ -38,6 +38,7 @@ local Random = require("random")
 local SearchEngines = {
     duckduckgo = require("webbrowser_duckduckgo"),
     brave_api = require("webbrowser_brave_api"),
+    google_api = require("webbrowser_google_api"),
 }
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
