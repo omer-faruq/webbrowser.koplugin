@@ -170,6 +170,28 @@ function SearchHistoryStore:addEntry(entry)
     return stored_entry.id
 end
 
+function SearchHistoryStore:appendResults(entry_id, results)
+    if type(entry_id) ~= "number" then
+        return false
+    end
+    local sanitized = sanitizeResults(results)
+    if #sanitized == 0 then
+        return false
+    end
+    local data = self:load()
+    for _, entry in ipairs(data) do
+        if type(entry) == "table" and entry.id == entry_id then
+            entry.results = entry.results or {}
+            for _, item in ipairs(sanitized) do
+                table.insert(entry.results, item)
+            end
+            self:save()
+            return true
+        end
+    end
+    return false
+end
+
 function SearchHistoryStore:removeByIds(id_list)
     if not id_list or #id_list == 0 then
         return 0

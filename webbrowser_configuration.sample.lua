@@ -1,5 +1,5 @@
 return {
-    engine = "brave_api", -- options: "duckduckgo", "brave_api"
+    engine = "brave_api", -- options: "duckduckgo", "brave_api" , "google_api"
 
     engines = {
         duckduckgo = {

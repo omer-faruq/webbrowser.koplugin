@@ -3,11 +3,13 @@ local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local ButtonDialog = require("ui/widget/buttondialog")
+local Button = require("ui/widget/button")
 local Geom = require("ui/geometry")
 local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local Device = require("device")
 local Screen = Device.screen
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local CheckButton = require("ui/widget/checkbutton")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local UIManager = require("ui/uimanager")
@@ -35,11 +37,26 @@ local BookmarksStore = require("webbrowser_bookmarks")
 local SearchHistoryStore = require("webbrowser_history")
 local Random = require("random")
 
+local function removeWidgetFromGroup(group, target)
+    if not group or not target then
+        return
+    end
+    for index, widget in ipairs(group) do
+        if widget == target then
+            table.remove(group, index)
+            break
+        end
+    end
+end
+
 local SearchEngines = {
     duckduckgo = require("webbrowser_duckduckgo"),
     brave_api = require("webbrowser_brave_api"),
     google_api = require("webbrowser_google_api"),
 }
+
+local GOOGLE_DEFAULT_BATCH_SIZE = 10
+local GOOGLE_API_MAX_TOTAL = 100
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
@@ -183,13 +200,21 @@ function WebBrowser:addSearchHistoryEntry(query, results, engine_display, engine
         engine_display = engine_display,
         engine_name = engine_name,
         timestamp = final_timestamp,
-        results = results,
+        results = util.tableDeepCopy(results),
     }
-    local ok, err = pcall(function()
-        store:addEntry(entry)
+    local ok, result_or_err = pcall(function()
+        return store:addEntry(entry)
     end)
     if not ok and err then
         logger.warn("webbrowser", "failed to add search history entry", err)
+        self.last_history_entry_id = nil
+    elseif ok then
+        local entry_id = result_or_err
+        if type(entry_id) == "number" then
+            self.last_history_entry_id = entry_id
+        else
+            self.last_history_entry_id = nil
+        end
     end
 end
 
@@ -1059,6 +1084,8 @@ function WebBrowser:init()
     self.bookmarks_store = BookmarksStore:new()
     self.bookmarks_dialog = nil
     self.last_results = nil
+    self.google_results_paging = nil
+    self.last_history_entry_id = nil
     self.search_history_store = nil
     self.search_history_dialog = nil
     self.mupdf_renderer = nil
@@ -1293,7 +1320,7 @@ function WebBrowser:performSearch(query)
         return
     end
 
-    self:showResultsMenu(query, results, engine_display, engine_name)
+    self:showResultsMenu(query, results, engine_display, engine_name, { engine_config = engine_config })
 end
 
 function WebBrowser:showResultsMenu(query, results, engine_display, engine_name, options)
@@ -1306,54 +1333,37 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
     local resolved_engine_name = engine_name or self:getSelectedEngineName()
     local skip_history_record = options and options.skip_history_record
     local provided_timestamp = options and options.timestamp
+    local engine_config_option = options and options.engine_config
+
+    local stored_engine_config
+    if engine_config_option then
+        stored_engine_config = util.tableDeepCopy(engine_config_option)
+    end
 
     self.last_results = {
         query = query,
         items = results,
         engine_display = display_name,
         engine_name = resolved_engine_name,
+        engine_config = stored_engine_config,
     }
 
     if not skip_history_record then
         self:addSearchHistoryEntry(query, results, display_name, resolved_engine_name, provided_timestamp)
     end
 
+    if resolved_engine_name == "google_api" and stored_engine_config then
+        self:prepareGooglePaging(query, results, stored_engine_config)
+    else
+        self.google_results_paging = nil
+    end
+
     local item_table = {}
     for _, result in ipairs(results) do
-        local sub_text = result.snippet
-        if resolved_engine_name == "brave_api" and result.domain and result.domain ~= "" then
-            if sub_text and sub_text ~= "" then
-                sub_text = string.format("%s\n%s", result.domain, sub_text)
-            else
-                sub_text = result.domain
-            end
+        local entry = self:buildResultMenuEntry(result, resolved_engine_name)
+        if entry then
+            table.insert(item_table, entry)
         end
-
-        local display_text = result.title or ""
-        local raw_url = result.url or result.source_url or result.gateway_url
-        local normalized_url = raw_url and Utils.decode_result_url(raw_url)
-        normalized_url = normalized_url and trim_text(normalized_url) or ""
-        if normalized_url ~= "" then
-            if display_text and display_text ~= "" then
-                display_text = string.format("%s — %s", display_text, normalized_url)
-            else
-                display_text = normalized_url
-            end
-        elseif not display_text or display_text == "" then
-            display_text = raw_url or ""
-        end
-
-        table.insert(item_table, {
-            text = display_text,
-            sub_text = sub_text,
-            callback = function()
-                self:openResult(result)
-            end,
-            hold_callback = function()
-                self:showResultActions(result)
-            end,
-            hold_keep_menu_open = true,
-        })
     end
 
     self.results_menu = Menu:new {
@@ -1371,7 +1381,285 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
         end,
     }
 
+    if resolved_engine_name == "google_api" and stored_engine_config then
+        self:updateResultsMenuLoadMore(self.results_menu, {
+            text = _("Load more"),
+            enabled = self:canLoadMoreGoogleResults(),
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+    else
+        self:updateResultsMenuLoadMore(self.results_menu)
+    end
+
     UIManager:show(self.results_menu)
+end
+
+function WebBrowser:buildResultMenuEntry(result, engine_name)
+    if not result then
+        return nil
+    end
+
+    local sub_text = result.snippet
+    if engine_name == "brave_api" and result.domain and result.domain ~= "" then
+        if sub_text and sub_text ~= "" then
+            sub_text = string.format("%s\n%s", result.domain, sub_text)
+        else
+            sub_text = result.domain
+        end
+    end
+
+    local display_text = result.title or ""
+    local raw_url = result.url or result.source_url or result.gateway_url
+    local normalized_url = raw_url and Utils.decode_result_url(raw_url)
+    normalized_url = normalized_url and trim_text(normalized_url) or ""
+    if normalized_url ~= "" then
+        if display_text and display_text ~= "" then
+            display_text = string.format("%s — %s", display_text, normalized_url)
+        else
+            display_text = normalized_url
+        end
+    elseif not display_text or display_text == "" then
+        display_text = raw_url or ""
+    end
+
+    return {
+        text = display_text,
+        sub_text = sub_text,
+        callback = function()
+            self:openResult(result)
+        end,
+        hold_callback = function()
+            self:showResultActions(result)
+        end,
+        hold_keep_menu_open = true,
+    }
+end
+
+function WebBrowser:updateResultsMenuLoadMore(menu, options)
+    if not menu or not menu.page_info then
+        return
+    end
+    if options then
+        if not menu._load_more_span then
+            menu._load_more_span = HorizontalSpan:new {
+                width = Screen:scaleBySize(16),
+            }
+        end
+        if not menu._load_more_button then
+            menu._load_more_button = Button:new {
+                text = options.text or _("Load more"),
+                bordersize = 0,
+                show_parent = menu.show_parent or menu,
+            }
+        end
+        if options.text then
+            if menu._load_more_button.setText then
+                menu._load_more_button:setText(options.text, menu._load_more_button.width)
+            else
+                menu._load_more_button.text = options.text
+            end
+        end
+        menu._load_more_button.callback = options.callback
+        menu._load_more_button:enableDisable(options.enabled ~= false)
+        if not menu._load_more_inserted then
+            table.insert(menu.page_info, menu._load_more_span)
+            table.insert(menu.page_info, menu._load_more_button)
+            menu._load_more_inserted = true
+        end
+        menu.page_info:resetLayout()
+    else
+        if menu._load_more_inserted then
+            removeWidgetFromGroup(menu.page_info, menu._load_more_button)
+            removeWidgetFromGroup(menu.page_info, menu._load_more_span)
+            menu._load_more_inserted = false
+            menu.page_info:resetLayout()
+        end
+    end
+end
+
+function WebBrowser:getGoogleStartParam(config)
+    local start = tonumber(config and config.start)
+    if start and start > 0 then
+        return math.floor(start)
+    end
+    local offset = tonumber(config and config.offset)
+    if offset and offset >= 0 then
+        return math.floor(offset) + 1
+    end
+    return 1
+end
+
+function WebBrowser:getGoogleBatchSize(config)
+    local size = tonumber(config and config.page_size)
+    if not size or size < 1 then
+        size = GOOGLE_DEFAULT_BATCH_SIZE
+    end
+    if size > GOOGLE_DEFAULT_BATCH_SIZE then
+        size = GOOGLE_DEFAULT_BATCH_SIZE
+    end
+    return size
+end
+
+function WebBrowser:prepareGooglePaging(query, results, config)
+    local effective_config = config or {}
+    local batch_size = self:getGoogleBatchSize(effective_config)
+    local next_start = self:getGoogleStartParam(effective_config) + #results
+    local has_more = (#results >= batch_size) and (next_start <= GOOGLE_API_MAX_TOTAL)
+    self.google_results_paging = {
+        query = query,
+        base_config = util.tableDeepCopy(effective_config),
+        batch_size = batch_size,
+        next_start = next_start,
+        has_more = has_more,
+        history_entry_id = self.last_history_entry_id,
+    }
+end
+
+function WebBrowser:canLoadMoreGoogleResults()
+    local state = self.google_results_paging
+    return state and state.has_more or false
+end
+
+function WebBrowser:fetchMoreGoogleResults(state)
+    if not state then
+        return
+    end
+    local menu = self.results_menu
+    if not menu then
+        return
+    end
+
+    local engine = SearchEngines.google_api
+    if not engine then
+        return
+    end
+
+    local request_config = util.tableDeepCopy(state.base_config or {})
+    request_config.start = state.next_start
+    request_config.max_results = state.batch_size
+    request_config.page_size = state.batch_size
+
+    local info = InfoMessage:new {
+        text = _("Loading more results…"),
+        timeout = 0,
+    }
+    UIManager:show(info)
+
+    local results, err = engine.search(state.query, request_config)
+    UIManager:close(info)
+
+    if not results then
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        UIManager:show(InfoMessage:new {
+            text = err or _("Failed to load more results."),
+            timeout = 3,
+        })
+        return
+    end
+
+    if #results == 0 then
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        UIManager:show(InfoMessage:new {
+            text = _("No more results found."),
+            timeout = 2,
+        })
+        return
+    end
+
+    if not self.last_results or self.last_results.engine_name ~= "google_api" then
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        return
+    end
+
+    for _, result in ipairs(results) do
+        table.insert(self.last_results.items, result)
+        table.insert(menu.item_table, self:buildResultMenuEntry(result, self.last_results.engine_name))
+    end
+
+    menu:updateItems()
+
+    state.next_start = state.next_start + #results
+    if #results < state.batch_size or state.next_start > GOOGLE_API_MAX_TOTAL then
+        state.has_more = false
+    else
+        state.has_more = true
+    end
+
+    self:updateResultsMenuLoadMore(menu, {
+        text = _("Load more"),
+        enabled = state.has_more,
+        callback = function()
+            self:onResultsMenuLoadMore()
+        end,
+    })
+
+    if state.history_entry_id then
+        local store = self:getSearchHistoryStore()
+        if store then
+            local ok, err = pcall(function()
+                store:appendResults(state.history_entry_id, results)
+            end)
+            if not ok and err then
+                logger.warn("webbrowser", "failed to append search history results", err)
+            end
+        end
+    end
+end
+
+function WebBrowser:onResultsMenuLoadMore()
+    if not self.results_menu then
+        return
+    end
+    local state = self.google_results_paging
+    if not state then
+        return
+    end
+
+    if not self:canLoadMoreGoogleResults() then
+        self:updateResultsMenuLoadMore(self.results_menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        return
+    end
+
+    self:updateResultsMenuLoadMore(self.results_menu, {
+        text = _("Load more"),
+        enabled = false,
+        callback = function()
+            self:onResultsMenuLoadMore()
+        end,
+    })
+
+    NetworkMgr:runWhenOnline(function()
+        self:fetchMoreGoogleResults(state)
+    end)
 end
 
 function WebBrowser:showResultActions(result)

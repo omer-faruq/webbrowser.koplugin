@@ -15,7 +15,7 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **DuckDuckGo HTML search endpoint** (`https://duckduckgo.com/html/`): Provides ad-free search results optimized for lightweight clients.
 - **Jina AI Markdown gateway** (`https://r.jina.ai/`): Converts source web pages to Markdown before they are shown inside KOReader.
 - **Brave Search API** (`https://api.search.brave.com/res/v1/web/search`): Supplies JSON search results when the Brave API engine is enabled.
-- **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): Returns up to ten results per query with generous free-tier limits for the Google engine.
+- **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): Returns up to ten results per query and now supports an in-app **Load more** button that fetches and appends additional batches to the same result list and history entry.
 
 ## Search Engine Reliability
 - **DuckDuckGo rate limiting**: While convenient, the HTML endpoint is prone to aggressive throttling and may flag repeated traffic as a bot, causing searches to fail after short sessions.
