@@ -4,6 +4,7 @@ local ltn12 = require("ltn12")
 local socketutil = require("socketutil")
 local json = require("json")
 local Utils = require("webbrowser_utils")
+local logger = require("logger")
 
 local BraveApi = {}
 
@@ -93,6 +94,42 @@ local function parse_results(payload, limit)
     end
 
     local results = {}
+    local metadata
+    if type(decoded.web) == "table" then
+        metadata = {}
+        local raw_next = decoded.web.next_offset or decoded.web.nextOffset or decoded.web.next
+        if raw_next == nil and type(decoded.web.cursor) == "table" then
+            raw_next = decoded.web.cursor.next_offset or decoded.web.cursor.nextOffset
+        end
+        if raw_next ~= nil then
+            metadata.next_offset = tonumber(raw_next)
+        end
+
+        local raw_total = decoded.web.total or decoded.web.total_count or decoded.web.totalCount or decoded.web.estimated_total or decoded.web.estimatedTotal
+        if raw_total ~= nil then
+            metadata.total = tonumber(raw_total)
+        end
+
+        local raw_more = decoded.web.more_results_available
+        if raw_more == nil then
+            raw_more = decoded.web.moreResultsAvailable
+        end
+        if raw_more ~= nil then
+            if type(raw_more) == "boolean" then
+                metadata.has_more = raw_more
+            elseif type(raw_more) == "number" then
+                metadata.has_more = raw_more ~= 0
+            elseif type(raw_more) == "string" then
+                local lowered = raw_more:lower()
+                metadata.has_more = lowered == "true" or lowered == "1" or lowered == "yes"
+            end
+        end
+
+        if not metadata.next_offset and not metadata.total and metadata.has_more == nil then
+            metadata = nil
+        end
+    end
+
     for _, item in ipairs(web_results) do
         if type(item) == "table" then
             local url = item.url or item.link
@@ -112,6 +149,10 @@ local function parse_results(payload, limit)
         if #results >= limit then
             break
         end
+    end
+
+    if metadata then
+        results._metadata = metadata
     end
 
     return results
@@ -188,6 +229,15 @@ function BraveApi.search(query, opts)
     local body, err, err_body = fetch(url, headers, settings.timeout, settings.maxtime)
     if not body then
         local message = extract_error_message(err_body, err)
+        if logger then
+            logger.warn("webbrowser", "Brave API request failed", {
+                url = url,
+                offset = params.offset,
+                count = params.count,
+                message = message,
+                err_body = err_body,
+            })
+        end
         return nil, message
     end
 

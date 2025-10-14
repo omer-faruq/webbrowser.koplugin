@@ -57,6 +57,8 @@ local SearchEngines = {
 
 local GOOGLE_DEFAULT_BATCH_SIZE = 10
 local GOOGLE_API_MAX_TOTAL = 100
+local BRAVE_DEFAULT_BATCH_SIZE = 10
+local BRAVE_API_MAX_TOTAL = 200
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
@@ -202,14 +204,14 @@ function WebBrowser:addSearchHistoryEntry(query, results, engine_display, engine
         timestamp = final_timestamp,
         results = util.tableDeepCopy(results),
     }
-    local ok, result_or_err = pcall(function()
+    local ok, entry_id_or_err = pcall(function()
         return store:addEntry(entry)
     end)
-    if not ok and err then
-        logger.warn("webbrowser", "failed to add search history entry", err)
+    if not ok then
+        logger.warn("webbrowser", "failed to add search history entry", entry_id_or_err)
         self.last_history_entry_id = nil
-    elseif ok then
-        local entry_id = result_or_err
+    else
+        local entry_id = entry_id_or_err
         if type(entry_id) == "number" then
             self.last_history_entry_id = entry_id
         else
@@ -1085,6 +1087,7 @@ function WebBrowser:init()
     self.bookmarks_dialog = nil
     self.last_results = nil
     self.google_results_paging = nil
+    self.brave_results_paging = nil
     self.last_history_entry_id = nil
     self.search_history_store = nil
     self.search_history_dialog = nil
@@ -1352,10 +1355,30 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
         self:addSearchHistoryEntry(query, results, display_name, resolved_engine_name, provided_timestamp)
     end
 
+    local load_more_options
     if resolved_engine_name == "google_api" and stored_engine_config then
         self:prepareGooglePaging(query, results, stored_engine_config)
+        self.brave_results_paging = nil
+        load_more_options = {
+            text = _("Load more"),
+            enabled = self:canLoadMoreGoogleResults(),
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        }
+    elseif resolved_engine_name == "brave_api" and stored_engine_config then
+        self:prepareBravePaging(query, results, stored_engine_config)
+        self.google_results_paging = nil
+        load_more_options = {
+            text = _("Load more"),
+            enabled = self:canLoadMoreBraveResults(),
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        }
     else
         self.google_results_paging = nil
+        self.brave_results_paging = nil
     end
 
     local item_table = {}
@@ -1381,14 +1404,8 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
         end,
     }
 
-    if resolved_engine_name == "google_api" and stored_engine_config then
-        self:updateResultsMenuLoadMore(self.results_menu, {
-            text = _("Load more"),
-            enabled = self:canLoadMoreGoogleResults(),
-            callback = function()
-                self:onResultsMenuLoadMore()
-            end,
-        })
+    if load_more_options then
+        self:updateResultsMenuLoadMore(self.results_menu, load_more_options)
     else
         self:updateResultsMenuLoadMore(self.results_menu)
     end
@@ -1522,6 +1539,58 @@ function WebBrowser:canLoadMoreGoogleResults()
     return state and state.has_more or false
 end
 
+function WebBrowser:getBraveOffset(config)
+    local offset = tonumber(config and config.offset) or 0
+    offset = math.floor(offset)
+    if offset < 0 then
+        offset = 0
+    end
+    return offset
+end
+
+function WebBrowser:getBraveBatchSize(config)
+    local size = tonumber(config and config.page_size)
+    if not size or size < 1 then
+        size = BRAVE_DEFAULT_BATCH_SIZE
+    end
+    if size > 20 then
+        size = 20
+    end
+    return size
+end
+
+function WebBrowser:prepareBravePaging(query, results, config)
+    local effective_config = config or {}
+    local batch_size = self:getBraveBatchSize(effective_config)
+    local next_offset = self:getBraveOffset(effective_config) + #results
+    local metadata = type(results) == "table" and results._metadata
+    local has_more
+    if metadata and metadata.has_more ~= nil then
+        has_more = metadata.has_more
+    elseif metadata and metadata.next_offset ~= nil then
+        has_more = metadata.next_offset > next_offset
+        next_offset = metadata.next_offset
+    else
+        has_more = (#results >= batch_size) and (next_offset < BRAVE_API_MAX_TOTAL)
+    end
+    if metadata and metadata.next_offset ~= nil then
+        next_offset = metadata.next_offset
+    end
+    self.brave_results_paging = {
+        query = query,
+        base_config = util.tableDeepCopy(effective_config),
+        batch_size = batch_size,
+        next_offset = next_offset,
+        has_more = has_more,
+        history_entry_id = self.last_history_entry_id,
+    }
+end
+
+function WebBrowser:canLoadMoreBraveResults()
+    local state = self.brave_results_paging
+    return state and state.has_more or false
+end
+
 function WebBrowser:fetchMoreGoogleResults(state)
     if not state then
         return
@@ -1629,17 +1698,87 @@ function WebBrowser:fetchMoreGoogleResults(state)
     end
 end
 
-function WebBrowser:onResultsMenuLoadMore()
-    if not self.results_menu then
-        return
-    end
-    local state = self.google_results_paging
+function WebBrowser:fetchMoreBraveResults(state)
     if not state then
         return
     end
+    local menu = self.results_menu
+    if not menu then
+        return
+    end
 
-    if not self:canLoadMoreGoogleResults() then
-        self:updateResultsMenuLoadMore(self.results_menu, {
+    local engine = SearchEngines.brave_api
+    if not engine then
+        return
+    end
+
+    local request_config = util.tableDeepCopy(state.base_config or {})
+    local clamped_offset = state.next_offset or 0
+    if clamped_offset > BRAVE_API_MAX_TOTAL - state.batch_size then
+        clamped_offset = BRAVE_API_MAX_TOTAL - state.batch_size
+    end
+    if clamped_offset < 0 then
+        clamped_offset = 0
+    end
+    local page_offset = math.floor(clamped_offset / state.batch_size)
+    local max_page = math.floor((BRAVE_API_MAX_TOTAL - 1) / state.batch_size)
+    if page_offset > max_page then
+        page_offset = max_page
+    end
+    if page_offset < 0 then
+        page_offset = 0
+    end
+    request_config.offset = page_offset
+    request_config.max_results = state.batch_size
+    request_config.page_size = state.batch_size
+
+    local info = InfoMessage:new {
+        text = _("Loading more results…"),
+        timeout = 0,
+    }
+    UIManager:show(info)
+
+    local results, err = engine.search(state.query, request_config)
+    UIManager:close(info)
+
+    if not results then
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        UIManager:show(InfoMessage:new {
+            text = err or _("Failed to load more results."),
+            timeout = 3,
+        })
+        return
+    end
+
+    local metadata = type(results) == "table" and results._metadata
+    local received_count = #results
+
+    if received_count == 0 then
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        UIManager:show(InfoMessage:new {
+            text = _("No more results found."),
+            timeout = 2,
+        })
+        return
+    end
+
+    if not self.last_results or self.last_results.engine_name ~= "brave_api" then
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
             text = _("Load more"),
             enabled = false,
             callback = function()
@@ -1649,17 +1788,119 @@ function WebBrowser:onResultsMenuLoadMore()
         return
     end
 
-    self:updateResultsMenuLoadMore(self.results_menu, {
+    for _, result in ipairs(results) do
+        table.insert(self.last_results.items, result)
+        table.insert(menu.item_table, self:buildResultMenuEntry(result, self.last_results.engine_name))
+    end
+
+    menu:updateItems()
+
+    if metadata and metadata.next_offset ~= nil then
+        state.next_offset = tonumber(metadata.next_offset) or state.next_offset
+    else
+        state.next_offset = state.next_offset + received_count
+    end
+
+    if metadata and metadata.has_more ~= nil then
+        state.has_more = metadata.has_more
+    elseif metadata and metadata.total then
+        local total = tonumber(metadata.total) or metadata.total
+        state.has_more = total and state.next_offset < total
+    else
+        if received_count < state.batch_size or state.next_offset >= BRAVE_API_MAX_TOTAL then
+            state.has_more = false
+        else
+            state.has_more = true
+        end
+    end
+
+    self:updateResultsMenuLoadMore(menu, {
         text = _("Load more"),
-        enabled = false,
+        enabled = state.has_more,
         callback = function()
             self:onResultsMenuLoadMore()
         end,
     })
 
-    NetworkMgr:runWhenOnline(function()
-        self:fetchMoreGoogleResults(state)
-    end)
+    if state.history_entry_id then
+        local store = self:getSearchHistoryStore()
+        if store then
+            local ok, err = pcall(function()
+                store:appendResults(state.history_entry_id, results)
+            end)
+            if not ok and err then
+                logger.warn("webbrowser", "failed to append search history results", err)
+            end
+        end
+    end
+end
+
+function WebBrowser:onResultsMenuLoadMore()
+    if not self.results_menu then
+        return
+    end
+    local last_engine = self.last_results and self.last_results.engine_name
+
+    if last_engine == "google_api" then
+        local state = self.google_results_paging
+        if not state then
+            return
+        end
+
+        if not self:canLoadMoreGoogleResults() then
+            self:updateResultsMenuLoadMore(self.results_menu, {
+                text = _("Load more"),
+                enabled = false,
+                callback = function()
+                    self:onResultsMenuLoadMore()
+                end,
+            })
+            return
+        end
+
+        self:updateResultsMenuLoadMore(self.results_menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+
+        NetworkMgr:runWhenOnline(function()
+            self:fetchMoreGoogleResults(state)
+        end)
+        return
+    end
+
+    if last_engine == "brave_api" then
+        local state = self.brave_results_paging
+        if not state then
+            return
+        end
+
+        if not self:canLoadMoreBraveResults() then
+            self:updateResultsMenuLoadMore(self.results_menu, {
+                text = _("Load more"),
+                enabled = false,
+                callback = function()
+                    self:onResultsMenuLoadMore()
+                end,
+            })
+            return
+        end
+
+        self:updateResultsMenuLoadMore(self.results_menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+
+        NetworkMgr:runWhenOnline(function()
+            self:fetchMoreBraveResults(state)
+        end)
+    end
 end
 
 function WebBrowser:showResultActions(result)
