@@ -1970,6 +1970,30 @@ function WebBrowser:showResultActions(result)
                     end,
                 },
                 {
+                    text = _("Save"),
+                    callback = function()
+                        local target_url = raw_url or decoded_url or normalized_url
+                        if type(target_url) ~= "string" then
+                            target_url = nil
+                        end
+                        if target_url then
+                            target_url = trim_text(target_url)
+                        end
+                        if not target_url or target_url == "" or not target_url:match("^https?://") then
+                            UIManager:show(InfoMessage:new {
+                                text = _("Save URL is missing."),
+                                timeout = 2,
+                            })
+                            return
+                        end
+
+                        UIManager:close(dialog)
+                        NetworkMgr:runWhenOnline(function()
+                            self:saveExternalUrl(target_url)
+                        end)
+                    end,
+                },
+                {
                     text = _("Close"),
                     callback = function()
                         UIManager:close(dialog)
