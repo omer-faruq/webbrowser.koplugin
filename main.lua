@@ -26,6 +26,7 @@ local ltn12 = require("ltn12")
 local _ = require("gettext")
 local NetworkMgr = require("ui/network/manager")
 local DocumentRegistry = require("document/documentregistry")
+local DataStorage = require("datastorage")
 
 local MarkdownViewer = require("webbrowser_markdown_viewer")
 local Utils = require("webbrowser_utils")
@@ -731,6 +732,33 @@ function WebBrowser:ensureMuPDFLinkHandler()
             }
         end)
 
+        local function markdown_link_callback(external_dialog, link_url)
+            UIManager:close(external_dialog.external_link_dialog)
+            local target_url = link_url
+            if type(target_url) ~= "string" or not target_url:match("^https?://") then
+                UIManager:show(InfoMessage:new {
+                    text = _("Markdown URL is missing."),
+                    timeout = 2,
+                })
+                return
+            end
+            NetworkMgr:runWhenOnline(function()
+                self:downloadMarkdownAndOpen(target_url, link_url, false)
+            end)
+        end
+
+        self.ui.link:addToExternalLinkDialog("37_markdown_webbrowser", function(external_dialog, link_url)
+            return {
+                text = _("Markdown (native)"),
+                callback = function()
+                    markdown_link_callback(external_dialog, link_url)
+                end,
+                show_in_dialog_func = function()
+                    return type(link_url) == "string" and link_url:match("^https?://") ~= nil and (self:isMuPDFRender() or self:isCreRender())
+                end,
+            }
+        end)
+
         self.ui.link:addToExternalLinkDialog("40_bookmark_webbrowser_mupdf", function(external_dialog, link_url)
             return {
                 text = _("Bookmark (Browser)"),
@@ -1158,7 +1186,8 @@ function WebBrowser:determineSaveDirectory()
     return fallback, attempted
 end
 
-function WebBrowser:generateMarkdownFilename(page, directory)
+function WebBrowser:generateMarkdownFilename(page, directory, enforce_unique)
+    local unique = enforce_unique ~= false
     local base = page.title or page.source_url or page.gateway_url or os.date("web_%Y%m%d_%H%M%S")
     if not base or base == "" then
         base = os.date("web_%Y%m%d_%H%M%S")
@@ -1174,14 +1203,105 @@ function WebBrowser:generateMarkdownFilename(page, directory)
 
     local name_only, ext = util.splitFileNameSuffix(safe_name)
     local suffix = ext and ext ~= "" and ("." .. ext) or ""
-    local candidate = safe_name
-    local counter = 1
-    while util.fileExists(directory .. "/" .. candidate) do
-        candidate = string.format("%s_%d%s", name_only, counter, suffix)
-        counter = counter + 1
+    if unique then
+        local candidate = safe_name
+        local counter = 1
+        while util.fileExists(directory .. "/" .. candidate) do
+            candidate = string.format("%s_%d%s", name_only, counter, suffix)
+            counter = counter + 1
+        end
+        return candidate
     end
 
-    return candidate
+    return safe_name
+end
+
+function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results)
+    local target_url = trim_text(url or "")
+    if target_url == "" or not target_url:match("^https?://") then
+        UIManager:show(InfoMessage:new {
+            text = _("Markdown URL is missing."),
+            timeout = 2,
+        })
+        return
+    end
+
+    local gateway_url = Utils.ensure_markdown_gateway(target_url)
+
+    local info = InfoMessage:new {
+        text = _("Downloading Markdown…"),
+        timeout = 0,
+    }
+    UIManager:show(info)
+
+    local markdown, err = fetch_markdown(gateway_url)
+    UIManager:close(info)
+
+    if not markdown then
+        self:handleFetchError(err, reopen_results)
+        return
+    end
+
+    local markdown_dir = string.format("%s/cache/webbrowser/markdown", DataStorage:getDataDir())
+    local created, create_err = util.makePath(markdown_dir)
+    if not created then
+        UIManager:show(InfoMessage:new {
+            text = _(string.format("Failed to prepare markdown directory: %s", create_err or "")),
+            timeout = 3,
+        })
+        return
+    end
+
+    local page = {
+        title = title and trim_text(title) ~= "" and title or target_url,
+        source_url = target_url,
+        gateway_url = gateway_url,
+    }
+
+    local filename = self:generateMarkdownFilename(page, markdown_dir, false)
+    local filepath = string.format("%s/%s", markdown_dir, filename)
+
+    if util.fileExists(filepath) then
+        local removed, remove_err = os.remove(filepath)
+        if not removed then
+            UIManager:show(InfoMessage:new {
+                text = _(string.format("Failed to replace existing file: %s", remove_err or "")),
+                timeout = 3,
+            })
+            return
+        end
+    end
+
+    local base_name = util.splitFileNameSuffix(filename)
+    if base_name and base_name ~= "" then
+        local sdr_path = string.format("%s/%s.sdr", markdown_dir, base_name)
+        local attributes = lfs.attributes(sdr_path)
+        if attributes then
+            local ok_remove, err_remove = pcall(removePath, sdr_path)
+            if not ok_remove then
+                logger.warn("webbrowser", "failed to remove existing markdown SDR", sdr_path, err_remove)
+            end
+        end
+    end
+
+    local file, file_err = io.open(filepath, "w")
+    if not file then
+        UIManager:show(InfoMessage:new {
+            text = _(string.format("Failed to save file: %s", file_err or "")),
+            timeout = 3,
+        })
+        return
+    end
+
+    file:write(markdown)
+    file:close()
+
+    UIManager:show(InfoMessage:new {
+        text = _(string.format("Saved to %s", filepath)),
+        timeout = 3,
+    })
+
+    FileManager:openFile(filepath)
 end
 
 function WebBrowser:addToMainMenu(menu_items)
@@ -1941,6 +2061,18 @@ function WebBrowser:showResultActions(result)
 
     local bookmark_url = (normalized_url and normalized_url ~= "") and normalized_url or raw_url
 
+    local function getTargetUrl()
+        local target_url = raw_url or decoded_url or normalized_url
+        if type(target_url) ~= "string" then
+            return nil
+        end
+        target_url = trim_text(target_url)
+        if target_url == "" or not target_url:match("^https?://") then
+            return nil
+        end
+        return target_url
+    end
+
     local dialog
     dialog = ButtonDialog:new {
         title = dialog_title,
@@ -1970,16 +2102,18 @@ function WebBrowser:showResultActions(result)
                     end,
                 },
                 {
+                    text = _("Close"),
+                    callback = function()
+                        UIManager:close(dialog)
+                    end,
+                },
+            },
+            {
+                {
                     text = _("Save"),
                     callback = function()
-                        local target_url = raw_url or decoded_url or normalized_url
-                        if type(target_url) ~= "string" then
-                            target_url = nil
-                        end
-                        if target_url then
-                            target_url = trim_text(target_url)
-                        end
-                        if not target_url or target_url == "" or not target_url:match("^https?://") then
+                        local target_url = getTargetUrl()
+                        if not target_url then
                             UIManager:show(InfoMessage:new {
                                 text = _("Save URL is missing."),
                                 timeout = 2,
@@ -1994,9 +2128,21 @@ function WebBrowser:showResultActions(result)
                     end,
                 },
                 {
-                    text = _("Close"),
+                    text = _("Markdown (native)"),
                     callback = function()
+                        local target_url = getTargetUrl()
+                        if not target_url then
+                            UIManager:show(InfoMessage:new {
+                                text = _("Markdown URL is missing."),
+                                timeout = 2,
+                            })
+                            return
+                        end
+
                         UIManager:close(dialog)
+                        NetworkMgr:runWhenOnline(function()
+                            self:downloadMarkdownAndOpen(target_url, title or normalized_url, false)
+                        end)
                     end,
                 },
             },
@@ -2737,6 +2883,44 @@ function WebBrowser:showBookmarksDialog(filter_text)
                 text = _("Add"),
                 callback = function()
                     self:showAddBookmarkDialog(dialog, clearDialog, filter_text)
+                end,
+            },
+            {
+                text = _("Markdown (native)"),
+                enabled = #visible_bookmarks > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected
+                    for _, entry in ipairs(visible_bookmarks) do
+                        if entry and entry.id and selection[entry.id] then
+                            selected = entry
+                            break
+                        end
+                    end
+                    if not selected then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select a bookmark to export."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    local target_url = selected.source_url or selected.gateway_url or selected.url
+                    if not target_url or target_url == "" then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Bookmark URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    UIManager:close(dialog)
+                    clearDialog()
+                    NetworkMgr:runWhenOnline(function()
+                        self:downloadMarkdownAndOpen(target_url, selected.title, false)
+                    end)
                 end,
             },
             {
