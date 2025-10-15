@@ -312,6 +312,50 @@ function WebBrowser:showSearchHistoryDialog()
                 end,
             },
             {
+                text = _("Copy"),
+                enabled = #entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    if not Device:hasClipboard() then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Clipboard not available on this device."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    local selected_entry
+                    for _, entry in ipairs(entries) do
+                        local entry_id = entry and entry.id
+                        if entry_id and selection[entry_id] then
+                            selected_entry = entry
+                            break
+                        end
+                    end
+                    if not selected_entry then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select a history entry to copy."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    local query_text = selected_entry.query or ""
+                    if query_text == "" then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Selected history entry has no search term to copy."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    Device.input.setClipboardText(query_text)
+                    UIManager:show(InfoMessage:new {
+                        text = _("Search term copied to clipboard."),
+                        timeout = 2,
+                    })
+                end,
+            },
+            {
                 text = _("Open"),
                 enabled = #entries > 0,
                 callback = function()
