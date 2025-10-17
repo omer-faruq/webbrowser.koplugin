@@ -65,6 +65,8 @@ local BRAVE_API_MAX_TOTAL = 200
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
 local DEFAULT_WEBSITE_HISTORY_LIMIT = 50
+local DEFAULT_TIMEOUT = 15
+local DEFAULT_MAXTIME = 30
 
 local WebBrowser = WidgetContainer:extend{
     name = "webbrowser",
@@ -208,7 +210,10 @@ end
 function WebBrowser:getSearchHistoryLimit()
     local limit = CONFIG.search_history_limit
     if type(limit) == "string" then
-        limit = tonumber(limit)
+        local numericLimit = tonumber(limit)
+        if numericLimit ~= nil then
+            limit = numericLimit
+        end
     end
     if type(limit) == "number" then
         local floored = math.floor(limit)
@@ -222,7 +227,10 @@ end
 function WebBrowser:getWebsiteHistoryLimit()
     local limit = CONFIG.website_history_limit
     if type(limit) == "string" then
-        limit = tonumber(limit)
+        local numericLimit = tonumber(limit)
+        if numericLimit ~= nil then
+            limit = numericLimit
+        end
     end
     if type(limit) == "number" then
         local floored = math.floor(limit)
@@ -1203,6 +1211,8 @@ function WebBrowser:loadCreUrl(url, reopen_results, loading_text)
     return true
 end
 
+local fetch_markdown
+
 function WebBrowser:openDirectUrl(raw_input)
     local normalized = self:normalizeUrlInput(raw_input)
     if not normalized then
@@ -1315,7 +1325,7 @@ function WebBrowser:getSearchEngineDisplayName()
     return "DuckDuckGo"
 end
 
-local fetch_markdown = function(url)
+fetch_markdown = function(url)
     local response_chunks = {}
     socketutil:set_timeout(DEFAULT_TIMEOUT, DEFAULT_MAXTIME)
     local request = {
@@ -1443,6 +1453,9 @@ function WebBrowser:generateMarkdownFilename(page, directory, enforce_unique)
     local base = page.title or page.source_url or page.gateway_url or os.date("web_%Y%m%d_%H%M%S")
     if not base or base == "" then
         base = os.date("web_%Y%m%d_%H%M%S")
+    end
+    if type(base) ~= "string" then
+        base = tostring(base)
     end
     if not base:lower():match("%.md$") then
         base = base .. ".md"
