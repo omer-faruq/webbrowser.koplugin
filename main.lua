@@ -36,6 +36,7 @@ local CONFIG = config_loaded and config_result or {}
 local CONFIG_MISSING = not config_loaded
 local BookmarksStore = require("webbrowser_bookmarks")
 local SearchHistoryStore = require("webbrowser_history")
+local WebsiteHistoryStore = require("webbrowser_website_history")
 local Random = require("random")
 
 local function removeWidgetFromGroup(group, target)
@@ -63,15 +64,12 @@ local BRAVE_API_MAX_TOTAL = 200
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
+local DEFAULT_WEBSITE_HISTORY_LIMIT = 50
 
 local WebBrowser = WidgetContainer:extend{
     name = "webbrowser",
     is_doc_only = false,
 }
-
-local DEFAULT_TIMEOUT = 20
-local DEFAULT_MAXTIME = 60
-local fetch_markdown
 
 local function removePath(path)
     local attributes = lfs.attributes(path)
@@ -104,6 +102,41 @@ end
 
 local function trim_text(value)
     return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function sanitize_plain_text(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local cleaned = util.htmlToPlainTextIfHtml(value)
+    cleaned = trim_text(cleaned)
+    if cleaned == "" then
+        return nil
+    end
+    return cleaned
+end
+
+local function normalize_history_url(url)
+    if type(url) ~= "string" then
+        return nil
+    end
+    local trimmed = trim_text(url)
+    if trimmed == "" then
+        return nil
+    end
+    if Utils and Utils.decode_result_url then
+        local decoded = Utils.decode_result_url(trimmed)
+        if type(decoded) == "string" then
+            decoded = trim_text(decoded)
+            if decoded ~= "" then
+                trimmed = decoded
+            end
+        end
+    end
+    if not trimmed:match("^https?://") then
+        return nil
+    end
+    return trimmed
 end
 
 local function is_html_file(path)
@@ -173,7 +206,7 @@ function WebBrowser:hasSearchHistoryEntries()
 end
 
 function WebBrowser:getSearchHistoryLimit()
-    local limit = CONFIG.history_max_entries
+    local limit = CONFIG.search_history_limit
     if type(limit) == "string" then
         limit = tonumber(limit)
     end
@@ -184,6 +217,139 @@ function WebBrowser:getSearchHistoryLimit()
         end
     end
     return DEFAULT_HISTORY_LIMIT
+end
+
+function WebBrowser:getWebsiteHistoryLimit()
+    local limit = CONFIG.website_history_limit
+    if type(limit) == "string" then
+        limit = tonumber(limit)
+    end
+    if type(limit) == "number" then
+        local floored = math.floor(limit)
+        if floored > 0 then
+            return floored
+        end
+        return 0
+    end
+    if limit == nil then
+        return DEFAULT_WEBSITE_HISTORY_LIMIT
+    end
+    return DEFAULT_WEBSITE_HISTORY_LIMIT
+end
+
+function WebBrowser:isWebsiteHistoryEnabled()
+    return self:getWebsiteHistoryLimit() > 0
+end
+
+function WebBrowser:shouldAllowDuplicateWebsiteHistory()
+    local value = CONFIG.duplicate_entry_on_website_history
+    if type(value) == "boolean" then
+        return value
+    end
+    if type(value) == "string" then
+        local normalized = value:lower()
+        if normalized == "false" or normalized == "0" or normalized == "no" then
+            return false
+        end
+        if normalized == "true" or normalized == "1" or normalized == "yes" then
+            return true
+        end
+    end
+    return true
+end
+
+function WebBrowser:getWebsiteHistoryStore()
+    if not self:isWebsiteHistoryEnabled() then
+        self.website_history_store = nil
+        return nil
+    end
+    if not self.website_history_store then
+        self.website_history_store = WebsiteHistoryStore:new {
+            max_entries = self:getWebsiteHistoryLimit(),
+            allow_duplicates = self:shouldAllowDuplicateWebsiteHistory(),
+        }
+    end
+    return self.website_history_store
+end
+
+function WebBrowser:hasWebsiteHistoryEntries()
+    local store = self:getWebsiteHistoryStore()
+    if not store then
+        return false
+    end
+    local entries = store:getAll()
+    return entries and #entries > 0
+end
+
+function WebBrowser:getWebsiteHistoryEntries()
+    local store = self:getWebsiteHistoryStore()
+    if not store then
+        return {}
+    end
+    local entries = store:getAll()
+    if type(entries) ~= "table" then
+        return {}
+    end
+    return entries
+end
+
+function WebBrowser:addWebsiteHistoryEntry(url, title, metadata)
+    local store = self:getWebsiteHistoryStore()
+    if not store then
+        return
+    end
+    local normalized_url = trim_text(url or "")
+    if normalized_url == "" then
+        return
+    end
+    local sanitized_title = sanitize_plain_text(title) or normalized_url
+    local timestamp = os.time()
+    local entry = {
+        url = normalized_url,
+        title = sanitized_title,
+        opened_at = os.date("%Y-%m-%d %H:%M:%S", timestamp),
+        timestamp = timestamp,
+    }
+    if type(metadata) == "table" then
+        for key, value in pairs(metadata) do
+            if entry[key] == nil and type(value) ~= "function" then
+                entry[key] = value
+            end
+        end
+    end
+    store:addEntry(entry)
+end
+
+function WebBrowser:recordWebsiteVisit(url, title, metadata)
+    local normalized_url = normalize_history_url(url)
+    if not normalized_url then
+        return
+    end
+    local sanitized_title = sanitize_plain_text(title) or normalized_url
+    self:addWebsiteHistoryEntry(normalized_url, sanitized_title, metadata)
+end
+
+function WebBrowser:openWebsiteHistoryEntry(entry)
+    if not entry then
+        UIManager:show(InfoMessage:new {
+            text = _("History entry is missing."),
+            timeout = 2,
+        })
+        return
+    end
+
+    local target_url = trim_text(entry.url or "")
+    if target_url == "" or not target_url:match("^https?://") then
+        UIManager:show(InfoMessage:new {
+            text = _("History URL is missing."),
+            timeout = 2,
+        })
+        return
+    end
+
+    UIManager:nextTick(function()
+        self:openDirectUrl(target_url)
+    end)
 end
 
 function WebBrowser:addSearchHistoryEntry(query, results, engine_display, engine_name, timestamp)
@@ -517,7 +683,7 @@ local function build_unique_file_path(directory, filename)
     return candidate
 end
 
-function WebBrowser:saveExternalUrl(url)
+function WebBrowser:saveExternalUrl(url, context)
     if type(url) ~= "string" or url == "" then
         UIManager:show(InfoMessage:new {
             text = _("Invalid URL."),
@@ -589,6 +755,26 @@ function WebBrowser:saveExternalUrl(url)
         text = _(string.format("Saved to %s", destination_path)),
         timeout = 3,
     })
+
+    local visit_metadata
+    if type(context) == "table" then
+        visit_metadata = {}
+        if context.source then
+            visit_metadata.source = context.source
+        end
+        visit_metadata.action = context.action or "save"
+    else
+        visit_metadata = { action = "save" }
+    end
+
+    local visit_title
+    if type(context) == "table" and context.title then
+        visit_title = context.title
+    else
+        visit_title = filename
+    end
+
+    self:recordWebsiteVisit(url, visit_title, visit_metadata)
 end
 
 function WebBrowser:shouldDownloadImages()
@@ -748,6 +934,10 @@ function WebBrowser:ensureMuPDFLinkHandler()
                         return
                     end
                     NetworkMgr:runWhenOnline(function()
+                        self:recordWebsiteVisit(target_url, link_url, {
+                            source = "document",
+                            action = "open",
+                        })
                         self:loadMuPDFUrl(target_url, false, _("Loading page…"))
                     end)
                 end,
@@ -767,6 +957,10 @@ function WebBrowser:ensureMuPDFLinkHandler()
                         return
                     end
                     NetworkMgr:runWhenOnline(function()
+                        self:recordWebsiteVisit(target_url, link_url, {
+                            source = "document",
+                            action = "open",
+                        })
                         self:loadCreUrl(target_url, false, _("Loading page…"))
                     end)
                 end,
@@ -787,7 +981,10 @@ function WebBrowser:ensureMuPDFLinkHandler()
                 return
             end
             NetworkMgr:runWhenOnline(function()
-                self:downloadMarkdownAndOpen(target_url, link_url, false)
+                self:downloadMarkdownAndOpen(target_url, link_url, false, {
+            source = "document",
+            action = "markdown",
+        })
             end)
         end
 
@@ -842,7 +1039,11 @@ function WebBrowser:ensureMuPDFLinkHandler()
                 return
             end
             NetworkMgr:runWhenOnline(function()
-                self:saveExternalUrl(target_url)
+                self:saveExternalUrl(target_url, {
+                    title = link_url,
+                    source = "document",
+                    action = "save",
+                })
             end)
         end
 
@@ -1013,6 +1214,10 @@ function WebBrowser:openDirectUrl(raw_input)
     end
 
     NetworkMgr:runWhenOnline(function()
+        self:recordWebsiteVisit(normalized, normalized, {
+            source = "direct",
+            action = "open",
+        })
         if self:isMuPDFRender() then
             self:loadMuPDFUrl(normalized, false, _("Loading page…"))
             return
@@ -1163,6 +1368,9 @@ function WebBrowser:init()
     self.last_history_entry_id = nil
     self.search_history_store = nil
     self.search_history_dialog = nil
+    self.website_history_store = nil
+    self.website_history_dialog = nil
+    self.website_history_filter_text = nil
     self.mupdf_renderer = nil
     self.mu_pdf_link_handler_registered = false
     if self:isMuPDFRender() or self:isCreRender() then
@@ -1260,7 +1468,7 @@ function WebBrowser:generateMarkdownFilename(page, directory, enforce_unique)
     return safe_name
 end
 
-function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results)
+function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results, metadata)
     local target_url = trim_text(url or "")
     if target_url == "" or not target_url:match("^https?://") then
         UIManager:show(InfoMessage:new {
@@ -1269,6 +1477,23 @@ function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results)
         })
         return
     end
+
+    local visit_metadata
+    if type(metadata) == "table" then
+        visit_metadata = {}
+        for key, value in pairs(metadata) do
+            if type(value) ~= "function" then
+                visit_metadata[key] = value
+            end
+        end
+        if visit_metadata.action == nil then
+            visit_metadata.action = "markdown"
+        end
+    else
+        visit_metadata = { action = "markdown" }
+    end
+
+    self:recordWebsiteVisit(target_url, title, visit_metadata)
 
     local gateway_url = Utils.ensure_markdown_gateway(target_url)
 
@@ -1286,7 +1511,17 @@ function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results)
         return
     end
 
-    local markdown_dir = string.format("%s/cache/webbrowser/markdown", DataStorage:getDataDir())
+    local base_data_dir = DataStorage:getFullDataDir()
+    if not base_data_dir or base_data_dir == "" then
+        base_data_dir = DataStorage:getDataDir() or ""
+        if base_data_dir == "." or base_data_dir == "" then
+            base_data_dir = lfs.currentdir()
+        elseif base_data_dir:sub(1, 1) ~= "/" then
+            base_data_dir = string.format("%s/%s", lfs.currentdir(), base_data_dir)
+        end
+    end
+
+    local markdown_dir = string.format("%s/cache/webbrowser/markdown", base_data_dir)
     local created, create_err = util.makePath(markdown_dir)
     if not created then
         UIManager:show(InfoMessage:new {
@@ -1433,17 +1668,6 @@ function WebBrowser:showSearchDialog()
             },
             {
                 {
-                    text = _("History"),
-                    enabled_func = function()
-                        return self:hasSearchHistoryEntries()
-                    end,
-                    callback = function()
-                        UIManager:close(self.search_dialog)
-                        self.search_dialog = nil
-                        self:showSearchHistoryDialog()
-                    end,
-                },
-                {
                     text = _("Bookmarks"),
                     callback = function()
                         UIManager:close(self.search_dialog)
@@ -1458,6 +1682,30 @@ function WebBrowser:showSearchDialog()
                     end,
                     callback = function()
                         self:clearMuPDFCache()
+                    end,
+                },
+            },
+            {
+                {
+                    text = _("Search History"),
+                    enabled_func = function()
+                        return self:hasSearchHistoryEntries()
+                    end,
+                    callback = function()
+                        UIManager:close(self.search_dialog)
+                        self.search_dialog = nil
+                        self:showSearchHistoryDialog()
+                    end,
+                },
+                {
+                    text = _("Website History"),
+                    enabled_func = function()
+                        return self:hasWebsiteHistoryEntries()
+                    end,
+                    callback = function()
+                        UIManager:close(self.search_dialog)
+                        self.search_dialog = nil
+                        self:showWebsiteHistoryDialog()
                     end,
                 },
             },
@@ -2167,7 +2415,11 @@ function WebBrowser:showResultActions(result)
 
                         UIManager:close(dialog)
                         NetworkMgr:runWhenOnline(function()
-                            self:saveExternalUrl(target_url)
+                            self:saveExternalUrl(target_url, {
+                                title = title or normalized_url,
+                                source = "search",
+                                action = "save",
+                            })
                         end)
                     end,
                 },
@@ -2185,7 +2437,10 @@ function WebBrowser:showResultActions(result)
 
                         UIManager:close(dialog)
                         NetworkMgr:runWhenOnline(function()
-                            self:downloadMarkdownAndOpen(target_url, title or normalized_url, false)
+                            self:downloadMarkdownAndOpen(target_url, title or normalized_url, false, {
+                                source = "search",
+                                action = "markdown",
+                            })
                         end)
                     end,
                 },
@@ -2255,6 +2510,11 @@ function WebBrowser:openResult(result)
             UIManager:close(self.results_menu)
             self.results_menu = nil
         end
+
+        local raw_url = result.url or result.gateway_url or result.source_url
+        local recorded_url = Utils.decode_result_url(raw_url) or raw_url
+        local visit_title = result.title or recorded_url
+        self:recordWebsiteVisit(recorded_url, visit_title, { source = "search", action = "open" })
 
         if self:isMuPDFRender() then
             self:openResultMuPDF(result)
@@ -2380,6 +2640,11 @@ function WebBrowser:onLinkTapped(link)
     end
 
     local gateway_url = Utils.ensure_markdown_gateway(absolute)
+
+    self:recordWebsiteVisit(absolute, absolute, {
+        source = "document",
+        action = "markdown_link",
+    })
 
     NetworkMgr:runWhenOnline(function()
         local content, err = fetch_markdown(gateway_url)
@@ -2742,11 +3007,13 @@ function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
 
     NetworkMgr:runWhenOnline(function()
         if self:isMuPDFRender() then
+            self:recordWebsiteVisit(direct_url, title, { source = "bookmarks", action = "open" })
             self:loadMuPDFUrl(direct_url, false, _("Loading bookmark…"))
             return
         end
 
         if self:isCreRender() then
+            self:recordWebsiteVisit(direct_url, title, { source = "bookmarks", action = "open" })
             self:loadCreUrl(direct_url, false, _("Loading bookmark…"))
             return
         end
@@ -2963,7 +3230,10 @@ function WebBrowser:showBookmarksDialog(filter_text)
                     UIManager:close(dialog)
                     clearDialog()
                     NetworkMgr:runWhenOnline(function()
-                        self:downloadMarkdownAndOpen(target_url, selected.title, false)
+                        self:downloadMarkdownAndOpen(target_url, selected.title, false, {
+                            source = "bookmarks",
+                            action = "markdown",
+                        })
                     end)
                 end,
             },
@@ -3103,6 +3373,375 @@ function WebBrowser:showBookmarksDialog(filter_text)
     if bookmark_container[1] then
         dialog:addWidget(bookmark_container[1])
     end
+
+    UIManager:show(dialog)
+end
+
+function WebBrowser:showWebsiteHistoryDialog(filter_text)
+    if self.website_history_dialog then
+        UIManager:close(self.website_history_dialog)
+        self.website_history_dialog = nil
+    end
+
+    local store = self:getWebsiteHistoryStore()
+    if not store then
+        return
+    end
+
+    if type(filter_text) == "string" then
+        filter_text = trim_text(filter_text)
+        if filter_text == "" then
+            filter_text = nil
+        end
+    else
+        filter_text = nil
+    end
+
+    self.website_history_filter_text = filter_text
+
+    local lower_filter = filter_text and filter_text:lower()
+
+    local function matchesFilter(entry)
+        if not lower_filter then
+            return true
+        end
+        local title_value = (entry.title or ""):lower()
+        if title_value ~= "" and title_value:find(lower_filter, 1, true) then
+            return true
+        end
+        local url_value = (entry.url or ""):lower()
+        if url_value ~= "" and url_value:find(lower_filter, 1, true) then
+            return true
+        end
+        return false
+    end
+
+    local entries = self:getWebsiteHistoryEntries()
+    local visible_entries = {}
+    for _, entry in ipairs(entries) do
+        if entry and matchesFilter(entry) then
+            table.insert(visible_entries, entry)
+        end
+    end
+
+    local selection = {}
+    local dialog
+
+    local function clearDialog()
+        self.website_history_dialog = nil
+        self.website_history_filter_text = nil
+    end
+
+    local function ensureSelection()
+        for _, entry in ipairs(visible_entries) do
+            if entry and entry.id and selection[entry.id] == nil then
+                selection[entry.id] = false
+            end
+        end
+    end
+    ensureSelection()
+
+    local buttons = {
+        {
+            {
+                text = _("Delete"),
+                enabled = #visible_entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local ids = {}
+                    for _, entry in ipairs(visible_entries) do
+                        if entry and entry.id and selection[entry.id] then
+                            table.insert(ids, entry.id)
+                        end
+                    end
+                    if #ids == 0 then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select at least one entry to delete."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    local removed = store:removeByIds(ids)
+                    if removed > 0 then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Selected entries deleted."),
+                            timeout = 2,
+                        })
+                    end
+                    dialog:onClose()
+                    clearDialog()
+                    UIManager:nextTick(function()
+                        self:showWebsiteHistoryDialog(filter_text)
+                    end)
+                end,
+            },
+            {
+                text = _("Open"),
+                enabled = #visible_entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected_entry
+                    for _, entry in ipairs(visible_entries) do
+                        if entry and entry.id and selection[entry.id] then
+                            selected_entry = entry
+                            break
+                        end
+                    end
+                    if not selected_entry then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select an entry to open."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    dialog:onClose()
+                    clearDialog()
+                    NetworkMgr:runWhenOnline(function()
+                        self:openWebsiteHistoryEntry(selected_entry)
+                    end)
+                end,
+            },
+            {
+                text = _("Close"),
+                callback = function()
+                    if dialog then
+                        dialog:onClose()
+                        clearDialog()
+                    end
+                end,
+            },
+        },
+        {
+            {
+                text = _("Bookmark"),
+                enabled = #visible_entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected_entry
+                    for _, entry in ipairs(visible_entries) do
+                        if entry and entry.id and selection[entry.id] then
+                            selected_entry = entry
+                            break
+                        end
+                    end
+                    if not selected_entry then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select an entry to bookmark."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    local url_value = selected_entry.url or selected_entry.source_url or selected_entry.gateway_url
+                    local title_value = selected_entry.title or url_value
+                    local added, message = self:addBookmarkEntry(url_value, title_value, _("History URL is missing."))
+                    if message and message ~= "" then
+                        UIManager:show(InfoMessage:new {
+                            text = message,
+                            timeout = 2,
+                        })
+                    end
+                    if added then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Bookmark added."),
+                            timeout = 2,
+                        })
+                    end
+                end,
+            },
+            {
+                text = _("Markdown (native)"),
+                enabled = #visible_entries > 0,
+                callback = function()
+                    if not dialog then
+                        return
+                    end
+                    local selected_entry
+                    for _, entry in ipairs(visible_entries) do
+                        if entry and entry.id and selection[entry.id] then
+                            selected_entry = entry
+                            break
+                        end
+                    end
+                    if not selected_entry then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Select an entry to export."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    local target_url = trim_text(selected_entry.url or "")
+                    if target_url == "" then
+                        UIManager:show(InfoMessage:new {
+                            text = _("History URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+                    UIManager:close(dialog)
+                    clearDialog()
+                    NetworkMgr:runWhenOnline(function()
+                        self:downloadMarkdownAndOpen(target_url, selected_entry.title or target_url, false, {
+                            source = "history",
+                            action = "markdown",
+                        })
+                    end)
+                end,
+            },
+            {
+                text = _("Filter"),
+                callback = function()
+                    local filter_dialog
+                    filter_dialog = InputDialog:new {
+                        title = _("Filter Website History"),
+                        input = filter_text or "",
+                        buttons = {
+                            {
+                                {
+                                    text = _("Cancel"),
+                                    callback = function()
+                                        UIManager:close(filter_dialog)
+                                    end,
+                                },
+                                {
+                                    text = _("Clear Filter"),
+                                    callback = function()
+                                        UIManager:close(filter_dialog)
+                                        if dialog then
+                                            dialog:onClose()
+                                            clearDialog()
+                                        end
+                                        UIManager:nextTick(function()
+                                            self:showWebsiteHistoryDialog()
+                                        end)
+                                    end,
+                                },
+                                {
+                                    text = _("Filter"),
+                                    is_enter_default = true,
+                                    callback = function()
+                                        local value = trim_text(filter_dialog:getInputText() or "")
+                                        UIManager:close(filter_dialog)
+                                        if dialog then
+                                            dialog:onClose()
+                                            clearDialog()
+                                        end
+                                        UIManager:nextTick(function()
+                                            if value ~= "" then
+                                                self:showWebsiteHistoryDialog(value)
+                                            else
+                                                self:showWebsiteHistoryDialog()
+                                            end
+                                        end)
+                                    end,
+                                },
+                            },
+                        },
+                    }
+
+                    UIManager:show(filter_dialog)
+                    filter_dialog:onShowKeyboard()
+                end,
+            },
+        },
+    }
+
+    dialog = ButtonDialog:new {
+        title = _("Website History"),
+        buttons = buttons,
+        tap_close_callback = clearDialog,
+        rows_per_page = {6, 8},
+    }
+
+    self.website_history_dialog = dialog
+
+    local function buildHistoryGroup()
+        if #visible_entries == 0 then
+            local empty_text
+            if filter_text then
+                empty_text = _("No history entries match the filter.")
+            else
+                empty_text = _("No website history recorded yet.")
+            end
+            local empty_widget = CheckButton:new {
+                text = empty_text,
+                parent = dialog,
+                checkable = false,
+                enabled = false,
+            }
+            empty_widget.not_focusable = true
+            return empty_widget
+        end
+
+        local history_group = VerticalGroup:new{}
+        for _, entry in ipairs(visible_entries) do
+            local id = entry.id
+            selection[id] = selection[id] or false
+
+            local raw_title = trim_text(entry.title or "")
+            local url_value = trim_text(entry.url or "")
+
+            local display_title = raw_title ~= "" and raw_title or nil
+            if display_title and url_value ~= "" and display_title == url_value then
+                display_title = nil
+            end
+
+            local parts = {}
+            local base_title = display_title or (url_value ~= "" and url_value) or _("(No title)")
+            parts[#parts + 1] = base_title
+            if base_title ~= url_value and url_value ~= "" then
+                parts[#parts + 1] = url_value
+            end
+            local timestamp_value
+            if type(entry.timestamp) == "number" then
+                timestamp_value = os.date("%Y-%m-%d %H:%M:%S", entry.timestamp)
+            elseif entry.opened_at and entry.opened_at ~= "" then
+                timestamp_value = entry.opened_at
+            end
+            if timestamp_value and timestamp_value ~= "" then
+                parts[#parts + 1] = timestamp_value
+            end
+
+            local label = table.concat(parts, " • ")
+
+            local checkbox
+            checkbox = CheckButton:new {
+                text = label,
+                parent = dialog,
+                callback = function()
+                    selection[id] = checkbox.checked
+                end,
+            }
+            history_group[#history_group + 1] = checkbox
+        end
+        return history_group
+    end
+
+    local content_widget = buildHistoryGroup()
+    local screen_height = Screen:getHeight()
+    local max_height = math.floor(screen_height * 0.7)
+
+    local wrapped_widget
+    if content_widget.getSize then
+        local size = content_widget:getSize()
+        if size.h > max_height then
+            wrapped_widget = ScrollableContainer:new {
+                dimen = Geom:new {
+                    w = dialog.buttontable:getSize().w + ScrollableContainer:getScrollbarWidth(),
+                    h = max_height,
+                },
+                show_parent = dialog,
+                content_widget,
+            }
+        end
+    end
+
+    dialog:addWidget(wrapped_widget or content_widget)
 
     UIManager:show(dialog)
 end

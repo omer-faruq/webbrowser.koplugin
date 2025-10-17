@@ -37,9 +37,11 @@ return {
     save_to_directory = nil, -- for markdown ,cre ,mupdf render types. : when using the save button it will save into this directory.
     keep_old_website_files = true, -- for mupdf and cre render types.
     download_images = false, --for mupdf and cre  render types.
-    use_stylesheets =false, --for mupdf and cre render types: using stylesheets sometimes results in unreadable text. 
-    history_max_entries = 10, -- maximum number of saved search history entries
-    
+    use_stylesheets = false, --for mupdf and cre render_types: using stylesheets sometimes results in unreadable text.
+    search_history_limit = 10, -- maximum number of saved search history entries
+    website_history_limit = 50, -- maximum number of saved website history entries, nil or 0 to disable.
+    duplicate_entry_on_website_history = true, -- record duplicate visits to the same URL when true, false will only record the latest visit.
+
     supported_file_types = { -- entries outside this list are saved / opened with a fallback .html extension.
         "epub3",
         "epub",
