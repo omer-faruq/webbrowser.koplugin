@@ -488,40 +488,48 @@ function MuPDFRenderer:fetchAndStore(url)
         return true, output_path
     end
 
-    local assets = discoverAssets(body)
+    local should_process_assets = not (self.download_images == false and self.use_stylesheets == false)
 
-    for _, asset in ipairs(assets) do
-        if asset.kind ~= "script" then -- ignore javascripts
-            local should_download = true
-            if asset.kind == "image" and self.download_images == false then
-                should_download = false
-            elseif asset.kind == "stylesheet" and self.use_stylesheets == false then
-                should_download = false
-            end
+    if should_process_assets then
+        local assets = discoverAssets(body)
 
-            if should_download then
-                local ref = asset.url
-                local resolved = resolveUrl(url, ref)
-                if resolved and resolved ~= "" then
-                    local asset_ok, asset_body, asset_headers = fetchUrl(resolved, self.timeout, self.maxtime)
-                    if asset_ok and asset_body then
-                        local asset_base = urlToCachePath(self.base_dir, resolved)
-                        local asset_ext = extensionForContentType(asset_headers and asset_headers["content-type"], resolved, self.supported_extensions)
-                        local asset_path = asset_base .. asset_ext
-                        local asset_dir = dirname(asset_path)
-                        if asset_dir ~= "" then
-                            local ensured_asset_dir, ensure_asset_err = ensureDirectory(asset_dir)
-                            if not ensured_asset_dir then
-                                logger.warn("webbrowser_renderer", "failed to create asset directory", asset_dir, ensure_asset_err)
+        for _, asset in ipairs(assets) do
+            if asset.kind ~= "script" then -- ignore javascripts
+                local should_download = true
+                if asset.kind == "image" and self.download_images == false then
+                    should_download = false
+                elseif asset.kind == "stylesheet" and self.use_stylesheets == false then
+                    should_download = false
+                end
+
+                if should_download then
+                    local ref = asset.url
+                    local resolved = resolveUrl(url, ref)
+                    if resolved and resolved ~= "" then
+                        local asset_ok, asset_body, asset_headers = fetchUrl(resolved, self.timeout, self.maxtime)
+                        if asset_ok and asset_body then
+                            local asset_base = urlToCachePath(self.base_dir, resolved)
+                            local asset_ext = extensionForContentType(asset_headers and asset_headers["content-type"], resolved, self.supported_extensions)
+                            local asset_path = asset_base .. asset_ext
+                            local asset_dir = dirname(asset_path)
+                            if asset_dir ~= "" then
+                                local ensured_asset_dir, ensure_asset_err = ensureDirectory(asset_dir)
+                                if not ensured_asset_dir then
+                                    logger.warn("webbrowser_renderer", "failed to create asset directory", asset_dir, ensure_asset_err)
+                                end
                             end
-                        end
-                        local wrote = writeFile(asset_path, asset_body)
-                        if wrote then
-                            local relative = relativePath(main_dir, asset_path)
-                            body = body:gsub(escapePattern(resolved), relative)
-                            body = body:gsub(escapePattern(ref), relative)
-                        else
-                            logger.warn("webbrowser_renderer", "failed to write asset", asset_path)
+                            local wrote = writeFile(asset_path, asset_body)
+                            if wrote then
+                                local relative = relativePath(main_dir, asset_path)
+                                if resolved and resolved ~= "" then
+                                    body = body:gsub(escapePattern(resolved), relative)
+                                end
+                                if ref and ref ~= "" then
+                                    body = body:gsub(escapePattern(ref), relative)
+                                end
+                            else
+                                logger.warn("webbrowser_renderer", "failed to write asset", asset_path)
+                            end
                         end
                     end
                 end
