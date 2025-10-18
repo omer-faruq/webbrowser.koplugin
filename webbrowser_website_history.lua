@@ -129,18 +129,6 @@ function WebsiteHistoryStore:save()
     file:close()
 end
 
-local function findExistingIndex(entries, target_url)
-    if type(entries) ~= "table" or not target_url or target_url == "" then
-        return nil
-    end
-    for index, entry in ipairs(entries) do
-        if entry and entry.url == target_url then
-            return index
-        end
-    end
-    return nil
-end
-
 function WebsiteHistoryStore:addEntry(entry)
     local data = self:load()
     local sanitized = sanitizeEntry(entry)
@@ -149,9 +137,12 @@ function WebsiteHistoryStore:addEntry(entry)
     end
 
     if self.allow_duplicates == false then
-        local existing_index = findExistingIndex(data, sanitized.url)
-        if existing_index then
-            table.remove(data, existing_index)
+        local target_url = sanitized.url
+        for index = #data, 1, -1 do
+            local existing = data[index]
+            if existing and existing.url == target_url then
+                table.remove(data, index)
+            end
         end
     end
 
