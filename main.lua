@@ -726,7 +726,8 @@ function WebBrowser:saveExternalUrl(url, context)
     }
     UIManager:show(info)
 
-    local ok, stored_path_or_error, headers = renderer:fetchAndStore(url)
+    local stripped_url = Utils.strip_fragment(url)
+    local ok, stored_path_or_error, headers = renderer:fetchAndStore(stripped_url)
 
     UIManager:close(info)
 
@@ -782,7 +783,7 @@ function WebBrowser:saveExternalUrl(url, context)
         visit_title = filename
     end
 
-    self:recordWebsiteVisit(url, visit_title, visit_metadata)
+    self:recordWebsiteVisit(stripped_url, visit_title, visit_metadata)
 end
 
 function WebBrowser:shouldDownloadImages()
@@ -1153,6 +1154,8 @@ function WebBrowser:loadMuPDFUrl(url, reopen_results, loading_text)
         return false
     end
 
+    local stripped_url = Utils.strip_fragment(url)
+
     self:ensureMuPDFLinkHandler()
 
     local info
@@ -1164,7 +1167,7 @@ function WebBrowser:loadMuPDFUrl(url, reopen_results, loading_text)
         UIManager:show(info)
     end
 
-    local ok, result_or_err = self:getMuPDFRenderer():fetchAndStore(url)
+    local ok, result_or_err = self:getMuPDFRenderer():fetchAndStore(stripped_url)
 
     if info then
         UIManager:close(info)
@@ -1185,6 +1188,8 @@ function WebBrowser:loadCreUrl(url, reopen_results, loading_text)
         return false
     end
 
+    local stripped_url = Utils.strip_fragment(url)
+
     self:ensureMuPDFLinkHandler()
 
     local info
@@ -1196,7 +1201,7 @@ function WebBrowser:loadCreUrl(url, reopen_results, loading_text)
         UIManager:show(info)
     end
 
-    local ok, result_or_err = self:getMuPDFRenderer():fetchAndStore(url)
+    local ok, result_or_err = self:getMuPDFRenderer():fetchAndStore(stripped_url)
 
     if info then
         UIManager:close(info)
@@ -1508,6 +1513,7 @@ function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results, metadata
 
     self:recordWebsiteVisit(target_url, title, visit_metadata)
 
+    target_url = Utils.strip_fragment(target_url)
     local gateway_url = Utils.ensure_markdown_gateway(target_url)
 
     local info = InfoMessage:new {

@@ -76,6 +76,17 @@ function Utils.absolute_url(base_url, link)
     return absolute or link
 end
 
+function Utils.strip_fragment(url)
+    if type(url) ~= "string" or url == "" then
+        return url
+    end
+    local fragment_start = url:find("#", 1, true)
+    if fragment_start then
+        return url:sub(1, fragment_start - 1)
+    end
+    return url
+end
+
 function Utils.ensure_markdown_gateway(url)
     if not url or url == "" then
         return url
@@ -83,7 +94,8 @@ function Utils.ensure_markdown_gateway(url)
     if url:match("^https://r%.jina%.ai/") then
         return url
     end
-    return "https://r.jina.ai/" .. url
+    local stripped = Utils.strip_fragment(url)
+    return "https://r.jina.ai/" .. (stripped or url)
 end
 
 function Utils.clean_text(text)
