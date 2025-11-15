@@ -6,6 +6,7 @@ local ltn12 = require("ltn12")
 local urlmod = require("socket.url")
 local util = require("util")
 local logger = require("logger")
+local sha2 = require("ffi/sha2")
 
 local DEFAULT_SUPPORTED_FILE_TYPES = {
     "epub3",
@@ -237,17 +238,54 @@ local function rewriteRelativeLinksToAbsolute(html, page_url)
     return html
 end
 
+local function sanitizePathComponent(value, limit)
+    if type(value) ~= "string" or value == "" then
+        value = "_"
+    end
+    value = value:gsub("[^%w%._%-]", "_")
+    if limit and #value > limit then
+        value = value:sub(1, limit)
+    end
+    return value ~= "" and value or "_"
+end
+
 local function urlToCachePath(base_dir, url)
     local parsed = urlmod.parse(url)
-    local host = parsed and parsed.host or "_"
-    local path = parsed and parsed.path or "/"
-
-    if path:sub(-1) == "/" then
-        path = path .. "index"
+    local host = sanitizePathComponent(parsed and parsed.host or "_", 64)
+    local path = parsed and parsed.path
+    if not path or path == "" then
+        path = "/"
     end
 
-    local cleaned = (host .. path):gsub("[^%w%._%-%/]", "_")
-    return base_dir .. "/" .. cleaned
+    local directories = {}
+    for segment in path:gmatch("[^/]+") do
+        table.insert(directories, segment)
+    end
+
+    local has_trailing_slash = path:sub(-1) == "/"
+    local file_segment
+    if has_trailing_slash or #directories == 0 then
+        file_segment = "index"
+    else
+        file_segment = table.remove(directories)
+    end
+
+    local sanitized_dirs = {}
+    for _, dir_segment in ipairs(directories) do
+        table.insert(sanitized_dirs, sanitizePathComponent(dir_segment, 64))
+    end
+    local sanitized_file = sanitizePathComponent(file_segment, 64)
+
+    local digest = sha2.sha1(url)
+    local shortened_digest = digest:sub(1, 16)
+    local final_file = string.format("%s_%s", sanitized_file, shortened_digest)
+
+    local path_parts = { base_dir, host }
+    for _, dir in ipairs(sanitized_dirs) do
+        table.insert(path_parts, dir)
+    end
+    table.insert(path_parts, final_file)
+    return table.concat(path_parts, "/")
 end
 
 local function normalizeExtension(ext)
