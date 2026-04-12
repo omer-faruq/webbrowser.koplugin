@@ -144,12 +144,14 @@ function MarkdownViewer:init()
             },
             {
                 text = _("Back"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     self:handleBack()
                 end,
             },
             {
                 text = _("Save"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = self.on_save ~= nil,
                 callback = function()
                     self:handleSave()
@@ -157,6 +159,7 @@ function MarkdownViewer:init()
             },
             {
                 text = _("Bookmark"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = self.on_bookmark ~= nil,
                 callback = function()
                     self:handleBookmark()
@@ -164,6 +167,7 @@ function MarkdownViewer:init()
             },
             {
                 text = _("Close"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     self:onClose()
                 end,

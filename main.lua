@@ -4,6 +4,7 @@ local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local ButtonDialog = require("ui/widget/buttondialog")
 local Button = require("ui/widget/button")
+local Blitbuffer = require("ffi/blitbuffer")
 local Geom = require("ui/geometry")
 local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -454,6 +455,7 @@ function WebBrowser:showSearchHistoryDialog()
         {
             {
                 text = _("Delete"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #entries > 0,
                 callback = function()
                     if not dialog then
@@ -487,6 +489,7 @@ function WebBrowser:showSearchHistoryDialog()
             },
             {
                 text = _("Copy"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #entries > 0,
                 callback = function()
                     if not dialog then
@@ -531,6 +534,7 @@ function WebBrowser:showSearchHistoryDialog()
             },
             {
                 text = _("Open"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #entries > 0,
                 callback = function()
                     if not dialog then
@@ -560,6 +564,7 @@ function WebBrowser:showSearchHistoryDialog()
             },
             {
                 text = _("Close"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     if dialog then
                         dialog:onClose()
@@ -936,6 +941,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
         self.ui.link:addToExternalLinkDialog("35_open_here_webbrowser_mupdf", function(external_dialog, link_url)
             return {
                 text = _("Open here (MuPDF)"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     UIManager:close(external_dialog.external_link_dialog)
                     local target_url = link_url
@@ -959,6 +965,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
         self.ui.link:addToExternalLinkDialog("36_open_here_webbrowser_cre", function(external_dialog, link_url)
             return {
                 text = _("Open here (CRE)"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     UIManager:close(external_dialog.external_link_dialog)
                     local target_url = link_url
@@ -1000,6 +1007,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
         self.ui.link:addToExternalLinkDialog("37_markdown_webbrowser", function(external_dialog, link_url)
             return {
                 text = _("Markdown (native)"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     markdown_link_callback(external_dialog, link_url)
                 end,
@@ -1012,6 +1020,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
         self.ui.link:addToExternalLinkDialog("40_bookmark_webbrowser_mupdf", function(external_dialog, link_url)
             return {
                 text = _("Bookmark (Browser)"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     UIManager:close(external_dialog.external_link_dialog)
                     local target_url = link_url
@@ -1059,6 +1068,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
         self.ui.link:addToExternalLinkDialog("50_save_webbrowser_mupdf", function(external_dialog, link_url)
             return {
                 text = _("Save"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     save_link_callback(external_dialog, link_url)
                 end,
@@ -1639,6 +1649,7 @@ function WebBrowser:showSearchDialog()
             {
                 {
                     text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
@@ -1646,6 +1657,7 @@ function WebBrowser:showSearchDialog()
                 },
                 {
                     text = _("Search"),
+                    background = Blitbuffer.COLOR_WHITE,
                     is_enter_default = true,
                     callback = function()
                         local query = self.search_dialog:getInputText() or ""
@@ -1666,6 +1678,7 @@ function WebBrowser:showSearchDialog()
                 },
                 {
                     text = _("Go"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         local url_input = self.search_dialog:getInputText() or ""
                         url_input = trim_text(url_input)
@@ -1688,6 +1701,7 @@ function WebBrowser:showSearchDialog()
             {
                 {
                     text = _("Bookmarks"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
@@ -1696,6 +1710,7 @@ function WebBrowser:showSearchDialog()
                 },
                 {
                     text = _("Clear cache"),
+                    background = Blitbuffer.COLOR_WHITE,
                     enabled_func = function()
                         return (self:isMuPDFRender() or self:isCreRender()) and self:shouldKeepOldWebsiteFiles()
                     end,
@@ -1707,6 +1722,7 @@ function WebBrowser:showSearchDialog()
             {
                 {
                     text = _("Search History"),
+                    background = Blitbuffer.COLOR_WHITE,
                     enabled_func = function()
                         return self:hasSearchHistoryEntries()
                     end,
@@ -1718,6 +1734,7 @@ function WebBrowser:showSearchDialog()
                 },
                 {
                     text = _("Website History"),
+                    background = Blitbuffer.COLOR_WHITE,
                     enabled_func = function()
                         return self:hasWebsiteHistoryEntries()
                     end,
@@ -1898,6 +1915,7 @@ function WebBrowser:updateResultsMenuLoadMore(menu, options)
         if not menu._load_more_button then
             menu._load_more_button = Button:new {
                 text = options.text or _("Load more"),
+                background = Blitbuffer.COLOR_WHITE,
                 bordersize = 0,
                 show_parent = menu.show_parent or menu,
             }
@@ -2392,6 +2410,7 @@ function WebBrowser:showResultActions(result)
             {
                 {
                     text = _("Go"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(dialog)
                         self:openResult(result)
@@ -2399,6 +2418,7 @@ function WebBrowser:showResultActions(result)
                 },
                 {
                     text = _("Bookmark"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         local added, message = self:addBookmarkEntry(bookmark_url, title, _("Bookmark URL is missing."))
                         if message and message ~= "" then
@@ -2414,6 +2434,7 @@ function WebBrowser:showResultActions(result)
                 },
                 {
                     text = _("Close"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(dialog)
                     end,
@@ -2422,6 +2443,7 @@ function WebBrowser:showResultActions(result)
             {
                 {
                     text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         local target_url = getTargetUrl()
                         if not target_url then
@@ -2444,6 +2466,7 @@ function WebBrowser:showResultActions(result)
                 },
                 {
                     text = _("Markdown (native)"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         local target_url = getTargetUrl()
                         if not target_url then
@@ -2816,12 +2839,14 @@ function WebBrowser:showAddBookmarkDialog(parent_dialog, clearDialogCallback, fi
             {
                 {
                     text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(add_dialog)
                     end,
                 },
                 {
                     text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
                     is_enter_default = true,
                     callback = function()
                         local fields = add_dialog:getFields()
@@ -2913,12 +2938,14 @@ function WebBrowser:showEditBookmarkDialog(parent_dialog, clearDialogCallback, e
             {
                 {
                     text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(edit_dialog)
                     end,
                 },
                 {
                     text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
                     is_enter_default = true,
                     callback = function()
                         local fields = edit_dialog:getFields()
@@ -3114,6 +3141,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
         {
             {
                 text = _("Delete"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
@@ -3148,6 +3176,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
             },
             {
                 text = _("Open"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
@@ -3176,6 +3205,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
             },
             {
                 text = _("Close"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     if dialog then
                         dialog:onClose()
@@ -3187,6 +3217,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
         {
             {
                 text = _("Edit"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
@@ -3211,12 +3242,14 @@ function WebBrowser:showBookmarksDialog(filter_text)
             },
             {
                 text = _("Add"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     self:showAddBookmarkDialog(dialog, clearDialog, filter_text)
                 end,
             },
             {
                 text = _("Markdown (native)"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_bookmarks > 0,
                 callback = function()
                     if not dialog then
@@ -3258,6 +3291,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
             },
             {
                 text = _("Filter"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     local filter_dialog
                     filter_dialog = InputDialog:new {
@@ -3267,12 +3301,14 @@ function WebBrowser:showBookmarksDialog(filter_text)
                             {
                                 {
                                     text = _("Cancel"),
+                                    background = Blitbuffer.COLOR_WHITE,
                                     callback = function()
                                         UIManager:close(filter_dialog)
                                     end,
                                 },
                                 {
                                     text = _("Clear Filter"),
+                                    background = Blitbuffer.COLOR_WHITE,
                                     callback = function()
                                         UIManager:close(filter_dialog)
                                         if dialog then
@@ -3286,6 +3322,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
                                 },
                                 {
                                     text = _("Filter"),
+                                    background = Blitbuffer.COLOR_WHITE,
                                     is_enter_default = true,
                                     callback = function()
                                         local value = trim_text(filter_dialog:getInputText() or "")
@@ -3464,6 +3501,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
         {
             {
                 text = _("Delete"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_entries > 0,
                 callback = function()
                     if not dialog then
@@ -3498,6 +3536,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
             },
             {
                 text = _("Open"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_entries > 0,
                 callback = function()
                     if not dialog then
@@ -3526,6 +3565,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
             },
             {
                 text = _("Close"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     if dialog then
                         dialog:onClose()
@@ -3537,6 +3577,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
         {
             {
                 text = _("Bookmark"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_entries > 0,
                 callback = function()
                     if not dialog then
@@ -3575,6 +3616,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
             },
             {
                 text = _("Markdown (native)"),
+                background = Blitbuffer.COLOR_WHITE,
                 enabled = #visible_entries > 0,
                 callback = function()
                     if not dialog then
@@ -3614,6 +3656,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
             },
             {
                 text = _("Filter"),
+                background = Blitbuffer.COLOR_WHITE,
                 callback = function()
                     local filter_dialog
                     filter_dialog = InputDialog:new {
@@ -3623,12 +3666,14 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
                             {
                                 {
                                     text = _("Cancel"),
+                                    background = Blitbuffer.COLOR_WHITE,
                                     callback = function()
                                         UIManager:close(filter_dialog)
                                     end,
                                 },
                                 {
                                     text = _("Clear Filter"),
+                                    background = Blitbuffer.COLOR_WHITE,
                                     callback = function()
                                         UIManager:close(filter_dialog)
                                         if dialog then
@@ -3642,6 +3687,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
                                 },
                                 {
                                     text = _("Filter"),
+                                    background = Blitbuffer.COLOR_WHITE,
                                     is_enter_default = true,
                                     callback = function()
                                         local value = trim_text(filter_dialog:getInputText() or "")
