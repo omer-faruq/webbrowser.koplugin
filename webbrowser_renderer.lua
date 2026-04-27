@@ -526,6 +526,22 @@ function MuPDFRenderer:fetchAndStore(url)
         return true, output_path
     end
 
+    -- Allow a site-specific adapter (see webbrowser_site_adapters/) to
+    -- rewrite the HTML body before assets are discovered. This is how we
+    -- support pages whose real content is loaded by client-side JavaScript.
+    -- Failures are non-fatal and fall back to the original body.
+    local ok_adapters, SiteAdapters = pcall(require, "webbrowser_site_adapters")
+    if ok_adapters and SiteAdapters and type(SiteAdapters.apply) == "function" then
+        local adapted_body = SiteAdapters:apply({
+            url = url,
+            body = body,
+            headers = headers,
+        })
+        if type(adapted_body) == "string" and adapted_body ~= "" then
+            body = adapted_body
+        end
+    end
+
     local should_process_assets = not (self.download_images == false and self.use_stylesheets == false)
 
     if should_process_assets then
