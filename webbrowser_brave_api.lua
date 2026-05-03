@@ -188,19 +188,14 @@ function BraveApi.search(query, opts)
         offset = settings.offset or 0,
     }
 
-    local language = settings.language or settings.lang
-    if language and language ~= "" then
-        params.lang = language
+    local search_lang = settings.search_lang or settings.language or settings.lang
+    if search_lang and search_lang ~= "" then
+        params.search_lang = search_lang:lower()
     end
 
     local country = settings.country
     if country and country ~= "" then
-        params.country = country
-    end
-
-    local search_lang = settings.search_lang
-    if search_lang and search_lang ~= "" then
-        params.search_lang = search_lang
+        params.country = country:lower()
     end
 
     local ui_lang = settings.ui_lang

@@ -7,7 +7,7 @@ return {
             display_name = "DuckDuckGo",
             base_url = "https://duckduckgo.com",
             search_path = "/html/",
-            language = "en",
+            language = "en-US",
             max_results = 10,
         },
         brave_api = {
@@ -28,6 +28,7 @@ return {
             api_key = "YOUR_API_KEY_HERE",
             cx = "YOUR_CX_HERE",
             language = "en",
+            country = "us",
             max_results = 10,
             page_size = 10,
         }

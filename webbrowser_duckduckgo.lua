@@ -118,7 +118,8 @@ function DuckDuckGo.search(query, opts)
     local settings = opts or {}
     DuckDuckGo.base_url = settings.base_url or "https://duckduckgo.com"
     DuckDuckGo.search_path = settings.search_path or "/html/"
-    DuckDuckGo.language = settings.language or "en"
+    local language = settings.kl or settings.language or "en-US"
+    DuckDuckGo.language = language:lower()
     DuckDuckGo.max_results = settings.max_results or 50
 
     local query_url = string.format("%s%s?q=%s&kl=%s&kp=1&kz=1", DuckDuckGo.base_url, DuckDuckGo.search_path, socket_url.escape(query), DuckDuckGo.language)

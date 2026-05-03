@@ -166,6 +166,19 @@ function GoogleApi.search(query, opts)
     local language = settings.language or settings.hl
     if language and language ~= "" then
         common_params.hl = language
+        if not settings.lr or settings.lr == "" then
+            common_params.lr = "lang_" .. language
+        end
+    end
+
+    local lr = settings.lr
+    if lr and lr ~= "" then
+        common_params.lr = lr
+    end
+
+    local country = settings.country or settings.gl
+    if country and country ~= "" then
+        common_params.gl = country:lower()
     end
 
     local safe = settings.safe or settings.safesearch
