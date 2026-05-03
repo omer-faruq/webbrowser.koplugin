@@ -28,6 +28,7 @@ local _ = require("gettext")
 local NetworkMgr = require("ui/network/manager")
 local DocumentRegistry = require("document/documentregistry")
 local DataStorage = require("datastorage")
+local LuaSettings = require("luasettings")
 
 local MarkdownViewer = require("webbrowser_markdown_viewer")
 local Utils = require("webbrowser_utils")
@@ -1396,11 +1397,151 @@ function WebBrowser:init()
     self.website_history_store = nil
     self.website_history_dialog = nil
     self.website_history_filter_text = nil
+    self:loadSettings()
     self.mupdf_renderer = nil
     self.mu_pdf_link_handler_registered = false
     if self:isMuPDFRender() or self:isCreRender() then
         self:ensureMuPDFLinkHandler()
     end
+end
+
+function WebBrowser:getSettingsFilePath()
+    return DataStorage:getSettingsDir() .. "/webbrowser_settings.lua"
+end
+
+function WebBrowser:getConfigModTime()
+    if CONFIG_MISSING then
+        return 0
+    end
+    
+    local info = debug.getinfo(1, "S")
+    local plugin_path = info.source:match("@(.*/)")
+    if not plugin_path then
+        plugin_path = info.source:match("@(.*\\)")
+    end
+    
+    local config_path
+    if plugin_path then
+        config_path = plugin_path .. "webbrowser_configuration.lua"
+    else
+        config_path = "plugins/webbrowser.koplugin/webbrowser_configuration.lua"
+    end
+    
+    local attributes = lfs.attributes(config_path)
+    
+    if attributes and attributes.modification then
+        return attributes.modification
+    end
+    
+    return 0
+end
+
+function WebBrowser:loadSettings()
+    local settings_path = self:getSettingsFilePath()
+    self.settings = LuaSettings:open(settings_path)
+    
+    if not CONFIG_MISSING then
+        local current_mtime = self:getConfigModTime()
+        local saved_mtime = self.settings:readSetting("config_last_mtime") or 0
+        
+        local config_changed = (current_mtime ~= saved_mtime)
+        
+        if config_changed then
+            self.settings:saveSetting("config_last_mtime", current_mtime)
+            self.settings:flush()
+        else
+            local saved_engine = self.settings:readSetting("engine")
+            if saved_engine and saved_engine ~= "" then
+                CONFIG.engine = saved_engine
+            end
+            
+            local engines = CONFIG.engines or {}
+            for engine_name, engine_config in pairs(engines) do
+                local saved_language = self.settings:readSetting(engine_name .. "_language")
+                if saved_language and saved_language ~= "" then
+                    engine_config.language = saved_language
+                end
+                
+                local saved_country = self.settings:readSetting(engine_name .. "_country")
+                if saved_country and saved_country ~= "" then
+                    engine_config.country = saved_country
+                end
+            end
+        end
+    end
+end
+
+function WebBrowser:saveSettings()
+    if not self.settings then
+        return
+    end
+    
+    if not CONFIG_MISSING then
+        if CONFIG.engine then
+            self.settings:saveSetting("engine", CONFIG.engine)
+        end
+        
+        local engines = CONFIG.engines or {}
+        for engine_name, engine_config in pairs(engines) do
+            if engine_config.language then
+                self.settings:saveSetting(engine_name .. "_language", engine_config.language)
+            end
+            if engine_config.country then
+                self.settings:saveSetting(engine_name .. "_country", engine_config.country)
+            end
+        end
+        
+        local current_mtime = self:getConfigModTime()
+        self.settings:saveSetting("config_last_mtime", current_mtime)
+    end
+    
+    self.settings:flush()
+end
+
+function WebBrowser:resetToConfigDefaults()
+    if not self.settings or CONFIG_MISSING then
+        return
+    end
+    
+    local ConfirmBox = require("ui/widget/confirmbox")
+    UIManager:show(ConfirmBox:new {
+        text = _("Reset all settings to config file defaults?\n\nThis will clear your UI preferences and reload settings from webbrowser_configuration.lua."),
+        ok_text = _("Reset"),
+        ok_callback = function()
+            self.settings:delSetting("engine")
+            self.settings:delSetting("config_last_mtime")
+            
+            local engines = CONFIG.engines or {}
+            for engine_name in pairs(engines) do
+                self.settings:delSetting(engine_name .. "_language")
+                self.settings:delSetting(engine_name .. "_country")
+            end
+            
+            self.settings:flush()
+            
+            package.loaded["webbrowser_configuration"] = nil
+            local config_loaded, config_result = pcall(require, "webbrowser_configuration")
+            if config_loaded then
+                for key, value in pairs(config_result) do
+                    CONFIG[key] = value
+                end
+            end
+            
+            if self.search_dialog then
+                UIManager:close(self.search_dialog)
+                self.search_dialog = nil
+            end
+            
+            self:loadSettings()
+            
+            UIManager:show(InfoMessage:new {
+                text = _("Settings reset to config defaults"),
+                timeout = 2,
+            })
+            
+            self:showSearchDialog()
+        end,
+    })
 end
 
 function WebBrowser:getHomeDirectory()
@@ -1626,6 +1767,185 @@ function WebBrowser:onShowWebBrowser()
     self:showSearchDialog()
 end
 
+function WebBrowser:showEngineSettings()
+    if CONFIG_MISSING then
+        return
+    end
+
+    local config, current_engine = self:getSearchEngineConfig()
+    local engine_display = self:getSearchEngineDisplayName()
+
+    local engine_settings_dialog
+    local buttons = {
+        {
+            {
+                text = _("Select Search Engine"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(engine_settings_dialog)
+                    self:showEngineSelector()
+                end,
+            },
+        },
+        {
+            {
+                text = _("Configure Language/Country"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(engine_settings_dialog)
+                    self:showLanguageSettings()
+                end,
+            },
+        },
+        {
+            {
+                text = _("Reset to Config Defaults"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(engine_settings_dialog)
+                    self:resetToConfigDefaults()
+                end,
+            },
+        },
+    }
+
+    engine_settings_dialog = ButtonDialog:new {
+        title = string.format(_("Search Engine: %s"), engine_display),
+        buttons = buttons,
+    }
+    UIManager:show(engine_settings_dialog)
+end
+
+function WebBrowser:showEngineSelector()
+    if CONFIG_MISSING then
+        return
+    end
+
+    local engines = CONFIG.engines or {}
+    local current_engine = self:getSelectedEngineName()
+    local buttons = {}
+
+    local engine_order = {"duckduckgo", "brave_api", "google_api"}
+    for i, engine_name in ipairs(engine_order) do
+        local engine_config = engines[engine_name]
+        if engine_config then
+            local display_name = engine_config.display_name or engine_name
+            local is_selected = (engine_name == current_engine)
+            local button_text = is_selected and ("✓ " .. display_name) or display_name
+            
+            table.insert(buttons, {{
+                text = button_text,
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(self.engine_selector_dialog)
+                    if engine_name ~= current_engine then
+                        CONFIG.engine = engine_name
+                        self:saveSettings()
+                        
+                        if self.search_dialog then
+                            UIManager:close(self.search_dialog)
+                            self.search_dialog = nil
+                        end
+                        
+                        UIManager:show(InfoMessage:new {
+                            text = string.format(_("Search engine changed to %s"), display_name),
+                            timeout = 2,
+                        })
+                        
+                        self:showSearchDialog()
+                    end
+                end,
+            }})
+        end
+    end
+
+    self.engine_selector_dialog = ButtonDialog:new {
+        title = _("Select Search Engine"),
+        buttons = buttons,
+    }
+    UIManager:show(self.engine_selector_dialog)
+end
+
+function WebBrowser:showLanguageSettings()
+    if CONFIG_MISSING then
+        return
+    end
+
+    local config, engine_name = self:getSearchEngineConfig()
+    if not config then
+        return
+    end
+
+    local is_duckduckgo = engine_name == "duckduckgo"
+    local fields = {}
+
+    if is_duckduckgo then
+        table.insert(fields, {
+            text = config.language or "en-US",
+            hint = _("Language (e.g., tr-TR, en-US, pt-BR)"),
+            input_type = "string",
+        })
+    else
+        table.insert(fields, {
+            text = config.language or "en",
+            hint = _("Language (e.g., tr, en, pt)"),
+            input_type = "string",
+        })
+        table.insert(fields, {
+            text = config.country or "",
+            hint = _("Country (e.g., tr, us, br)"),
+            input_type = "string",
+        })
+    end
+
+    local settings_dialog
+    settings_dialog = MultiInputDialog:new {
+        title = _("Language & Country Settings"),
+        fields = fields,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    callback = function()
+                        UIManager:close(settings_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    is_enter_default = true,
+                    callback = function()
+                        local new_language = settings_dialog:getInputText(1) or ""
+                        new_language = new_language:gsub("^%s+", ""):gsub("%s+$", "")
+
+                        if new_language ~= "" then
+                            config.language = new_language
+                        end
+
+                        if not is_duckduckgo then
+                            local new_country = settings_dialog:getInputText(2) or ""
+                            new_country = new_country:gsub("^%s+", ""):gsub("%s+$", "")
+                            if new_country ~= "" then
+                                config.country = new_country
+                            end
+                        end
+
+                        self:saveSettings()
+                        UIManager:close(settings_dialog)
+                        UIManager:show(InfoMessage:new {
+                            text = _("Settings saved successfully"),
+                            timeout = 2,
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(settings_dialog)
+    settings_dialog:onShowKeyboard()
+end
+
 function WebBrowser:showSearchDialog()
     if CONFIG_MISSING then
         UIManager:show(InfoMessage:new {
@@ -1645,6 +1965,11 @@ function WebBrowser:showSearchDialog()
         title = string.format(_("%s Search"), engine_display),
         input = "",
         input_hint = _("Enter keywords or URL"),
+        title_bar_left_icon = "appbar.settings",
+        title_bar_left_icon_tap_callback = function()
+            self.search_dialog:onCloseKeyboard()
+            self:showEngineSettings()
+        end,
         buttons = {
             {
                 {
