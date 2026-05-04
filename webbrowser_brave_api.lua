@@ -206,20 +206,33 @@ function BraveApi.search(query, opts)
         local lang = settings.language
         local country_code = settings.country
         if lang and lang ~= "" then
+            lang = lang:lower()
             if country_code and country_code ~= "" then
-                search_lang = lang:lower() .. "-" .. country_code:lower()
+                country_code = country_code:lower()
+                local combined = lang .. "-" .. country_code
+                local supported_locales = {
+                    ["pt-br"] = true, ["pt-pt"] = true,
+                    ["en-gb"] = true,
+                    ["zh-hans"] = true, ["zh-hant"] = true,
+                }
+                if supported_locales[combined] then
+                    search_lang = combined
+                else
+                    search_lang = lang
+                end
             else
-                search_lang = lang:lower()
+                search_lang = lang
             end
         end
     end
+    
     if search_lang and search_lang ~= "" then
         params.search_lang = search_lang
     end
 
     local country = settings.country
     if country and country ~= "" then
-        params.country = country:lower()
+        params.country = country:upper()
     end
 
     local ui_lang = settings.ui_lang
@@ -227,7 +240,15 @@ function BraveApi.search(query, opts)
         local lang = settings.language
         local country_code = settings.country
         if lang and lang ~= "" and country_code and country_code ~= "" then
-            ui_lang = lang:lower() .. "-" .. country_code:upper()
+            lang = lang:lower()
+            country_code = country_code:upper()
+            
+            local base_lang = lang:match("^([^%-]+)")
+            if base_lang then
+                ui_lang = base_lang .. "-" .. country_code
+            else
+                ui_lang = lang .. "-" .. country_code
+            end
         end
     end
     if ui_lang and ui_lang ~= "" then

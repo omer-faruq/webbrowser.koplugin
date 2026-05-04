@@ -16,6 +16,14 @@ return {
             display_name = "Brave API",
             base_url = "https://api.search.brave.com/res/v1/web/search",
             api_key = "your-api-key", -- Get your API key from https://api-dashboard.search.brave.com/
+            -- Language & Country: Plugin auto-combines when needed.
+            -- Examples:
+            --   Brazilian Portuguese: language = "pt",      country = "BR" → search_lang=pt-br, country=BR, ui_lang=pt-BR
+            --   British English:      language = "en",      country = "GB" → search_lang=en-gb, country=GB, ui_lang=en-GB
+            --   American English:     language = "en",      country = "US" → search_lang=en, country=US, ui_lang=en-US
+            --   Turkish:              language = "tr",      country = "TR" → search_lang=tr, country=TR, ui_lang=tr-TR
+            --   Simplified Chinese:   language = "zh-hans", country = "CN" → search_lang=zh-hans, country=CN, ui_lang=zh-CN
+            --   Traditional Chinese:  language = "zh-hant", country = "TW" → search_lang=zh-hant, country=TW, ui_lang=zh-TW
             language = "en",
             country = "us",
             safesearch = "moderate", -- https://api-dashboard.search.brave.com/app/documentation/web-search/query
