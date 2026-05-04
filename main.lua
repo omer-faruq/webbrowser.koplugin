@@ -1919,15 +1919,24 @@ function WebBrowser:showLanguageSettings()
     end
 
     local fields = {}
+    
+    local language_hint, country_hint
+    if engine_name == "brave_api" then
+        language_hint = _("Language (e.g., en, pt, pt-br, en-gb, tr, zh-hans)")
+        country_hint = _("Country (e.g., US, BR, GB, TR, CN, TW)")
+    else
+        language_hint = _("Language (e.g., en, pt, tr, zh)")
+        country_hint = _("Country (e.g., us, br, tr, cn)")
+    end
 
     table.insert(fields, {
         text = config.language or "en",
-        hint = _("Language (e.g., tr, en, pt, tzh)"),
+        hint = language_hint,
         input_type = "string",
     })
     table.insert(fields, {
         text = config.country or "",
-        hint = _("Country (e.g., tr, us, br, tw)"),
+        hint = country_hint,
         input_type = "string",
     })
 
