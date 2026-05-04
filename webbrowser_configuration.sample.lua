@@ -36,6 +36,7 @@ return {
     },
 
     render_type = "cre", -- options: "cre","mupdf", "markdown"  mupdf: pdf-like , cre: epub-like experience
+    cache_directory = nil, -- optional: custom cache folder path (default: .../koreader/cache/webbrowser). Useful for organizing offline articles.
     save_to_directory = nil, -- for markdown ,cre ,mupdf render types. : when using the save button it will save into this directory.
     keep_old_website_files = true, -- for mupdf and cre render types.
     download_images = false, --for mupdf and cre  render types.

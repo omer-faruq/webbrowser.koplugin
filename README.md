@@ -48,7 +48,8 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
   - PocketBook: `applications/koreader/plugins/`
   - Android: `koreader/plugins/`
   - macOS: `~/Library/Application Support/koreader/plugins/`
-- **Configuration file**: In `webbrowser.koplugin/`, create or edit `webbrowser_configuration.lua` to adjust settings like search engine keys, render modes, or feature toggles. You can make a copy of the file `webbrowser_configuration.sample.lua` and rename it to `webbrowser_configuration.lua`, and edit it. 
+- **Configuration file**: In `webbrowser.koplugin/`, create or edit `webbrowser_configuration.lua` to adjust settings like search engine keys, render modes, or feature toggles. You can make a copy of the file `webbrowser_configuration.sample.lua` and rename it to `webbrowser_configuration.lua`, and edit it.
+- **Custom cache location** (optional): By default, cached articles are stored in `.../koreader/cache/webbrowser`. To use a custom location, set `cache_directory = "/path/to/your/folder"` in `webbrowser_configuration.lua`. This is useful for organizing offline articles in a preferred location or switching between folders easily. 
 - **Search the web**: Choose "Web Browser" from the main menu under the search category and enter a query in the search dialog.
  - **Navigate results**: Tap a result to render it with the currently selected mode (Markdown, CRE, or MuPDF). You can continue reading by opening subsequent pages through their links. In Markdown mode you can return to the previous page with the back button, while CRE and MuPDF modes rely on KOReader's history function to revisit earlier pages.
 - **Manage bookmarks**: Save the current page, add manual entries, or revisit stored content through the bookmark dialog.

@@ -863,9 +863,21 @@ function WebBrowser:isCreRender()
     return self:getRenderType() == "cre"
 end
 
+function WebBrowser:getCacheDirectory()
+    local custom_dir = CONFIG.cache_directory
+    if type(custom_dir) == "string" then
+        local trimmed = trim_text(custom_dir)
+        if trimmed ~= "" then
+            return trimmed
+        end
+    end
+    return DataStorage:getDataDir() .. "/cache/webbrowser"
+end
+
 function WebBrowser:getMuPDFRenderer()
     if not self.mupdf_renderer then
         self.mupdf_renderer = MuPDFRenderer:new {
+            base_dir = self:getCacheDirectory(),
             keep_old_files = self:shouldKeepOldWebsiteFiles(),
             download_images = self:shouldDownloadImages(),
             use_stylesheets = self:shouldUseStylesheets(),
@@ -1720,17 +1732,8 @@ function WebBrowser:downloadMarkdownAndOpen(url, title, reopen_results, metadata
         return
     end
 
-    local base_data_dir = DataStorage:getFullDataDir()
-    if not base_data_dir or base_data_dir == "" then
-        base_data_dir = DataStorage:getDataDir() or ""
-        if base_data_dir == "." or base_data_dir == "" then
-            base_data_dir = lfs.currentdir()
-        elseif base_data_dir:sub(1, 1) ~= "/" then
-            base_data_dir = string.format("%s/%s", lfs.currentdir(), base_data_dir)
-        end
-    end
-
-    local markdown_dir = string.format("%s/cache/webbrowser/markdown", base_data_dir)
+    local cache_base = self:getCacheDirectory()
+    local markdown_dir = string.format("%s/markdown", cache_base)
     local created, create_err = util.makePath(markdown_dir)
     if not created then
         UIManager:show(InfoMessage:new {
