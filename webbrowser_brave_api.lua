@@ -199,6 +199,13 @@ function BraveApi.search(query, opts)
     end
 
     local ui_lang = settings.ui_lang
+    if not ui_lang or ui_lang == "" then
+        local lang = settings.language
+        local country_code = settings.country
+        if lang and lang ~= "" and country_code and country_code ~= "" then
+            ui_lang = lang:lower() .. "-" .. country_code:upper()
+        end
+    end
     if ui_lang and ui_lang ~= "" then
         params.ui_lang = ui_lang
     end
