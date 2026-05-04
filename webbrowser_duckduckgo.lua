@@ -87,6 +87,61 @@ local function find_first_child_with_class(node, tag_name, class_name)
     return nil
 end
 
+local function normalize_language_code(code)
+    if not code or code == "" then
+        return "en-us"
+    end
+    
+    local lower_code = code:lower()
+    local parts = {}
+    for part in lower_code:gmatch("[^-]+") do
+        table.insert(parts, part)
+    end
+    
+    if #parts ~= 2 then
+        return lower_code
+    end
+    
+    local first, second = parts[1], parts[2]
+    
+    local known_countries = {
+        br = true, tr = true, us = true, uk = true, au = true, ca = true,
+        de = true, fr = true, es = true, it = true, nl = true, pl = true,
+        ru = true, jp = true, cn = true, kr = true, ["in"] = true, za = true,
+        mx = true, ar = true, cl = true, co = true, pe = true, ve = true,
+        at = true, be = true, ch = true, cz = true, dk = true, ee = true,
+        fi = true, gr = true, hr = true, hu = true, ie = true, il = true,
+        lt = true, lv = true, no = true, nz = true, ph = true, pt = true,
+        ro = true, se = true, sg = true, sk = true, sl = true, th = true,
+        tw = true, ua = true, vn = true, hk = true, id = true, my = true,
+        bg = true, xa = true, ct = true, xl = true, ue = true, wt = true,
+    }
+    
+    local known_languages = {
+        en = true, pt = true, es = true, fr = true, de = true, it = true,
+        nl = true, pl = true, ru = true, tr = true, ar = true, zh = true,
+        ja = true, ko = true, he = true, el = true, cs = true, da = true,
+        et = true, fi = true, hu = true, id = true, ms = true, no = true,
+        ro = true, sk = true, sl = true, sv = true, th = true, uk = true,
+        vi = true, bg = true, hr = true, lt = true, lv = true, ca = true,
+        tl = true, tzh = true,
+    }
+    
+    if #first == 2 and #second == 2 then
+        if known_languages[first] and known_countries[second] then
+            return second .. "-" .. first
+        end
+    elseif (#first == 2 and #second == 3) or (#first == 3 and #second == 2) then
+        if known_languages[first] and known_countries[second] then
+            return second .. "-" .. first
+        elseif known_languages[second] and known_countries[first] then
+            return lower_code
+        end
+    end
+    
+    return lower_code
+end
+
 local function parse_results(html)
     local results = {}
     local root = HtmlParser.parse(html)
@@ -119,7 +174,7 @@ function DuckDuckGo.search(query, opts)
     DuckDuckGo.base_url = settings.base_url or "https://duckduckgo.com"
     DuckDuckGo.search_path = settings.search_path or "/html/"
     local language = settings.kl or settings.language or "en-US"
-    DuckDuckGo.language = language:lower()
+    DuckDuckGo.language = normalize_language_code(language)
     DuckDuckGo.max_results = settings.max_results or 50
 
     local query_url = string.format("%s%s?q=%s&kl=%s&kp=1&kz=1", DuckDuckGo.base_url, DuckDuckGo.search_path, socket_url.escape(query), DuckDuckGo.language)
