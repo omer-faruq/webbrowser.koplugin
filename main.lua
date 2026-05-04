@@ -1459,7 +1459,34 @@ function WebBrowser:loadSettings()
             for engine_name, engine_config in pairs(engines) do
                 local saved_language = self.settings:readSetting(engine_name .. "_language")
                 if saved_language and saved_language ~= "" then
-                    engine_config.language = saved_language
+                    if engine_name == "duckduckgo" and saved_language:find("-") then
+                        local parts = {}
+                        for part in saved_language:gmatch("[^-]+") do
+                            table.insert(parts, part)
+                        end
+                        if #parts == 2 then
+                            local first, second = parts[1]:lower(), parts[2]:lower()
+                            if #first == 2 and #second == 2 then
+                                local lang_codes = {en=true, pt=true, es=true, fr=true, de=true, it=true, tr=true, ar=true, zh=true, ja=true, ko=true, he=true, el=true, cs=true, da=true, et=true, fi=true, hu=true, id=true, ms=true, nl=true, no=true, pl=true, ro=true, ru=true, sk=true, sl=true, sv=true, th=true, uk=true, vi=true, bg=true, hr=true, lt=true, lv=true, ca=true, tl=true}
+                                local country_codes = {br=true, tr=true, us=true, uk=true, au=true, ca=true, de=true, fr=true, es=true, it=true, nl=true, pl=true, ru=true, jp=true, cn=true, kr=true, ["in"]=true, za=true, mx=true, ar=true, cl=true, co=true, pe=true, ve=true, at=true, be=true, ch=true, cz=true, dk=true, ee=true, fi=true, gr=true, hr=true, hu=true, ie=true, il=true, lt=true, lv=true, no=true, nz=true, ph=true, pt=true, ro=true, se=true, sg=true, sk=true, sl=true, th=true, tw=true, ua=true, vn=true, hk=true, id=true, my=true, bg=true, xa=true, ct=true, xl=true, ue=true, wt=true}
+                                if lang_codes[first] and country_codes[second] then
+                                    engine_config.language = first
+                                    engine_config.country = second
+                                elseif country_codes[first] and lang_codes[second] then
+                                    engine_config.language = second
+                                    engine_config.country = first
+                                else
+                                    engine_config.language = saved_language
+                                end
+                            else
+                                engine_config.language = saved_language
+                            end
+                        else
+                            engine_config.language = saved_language
+                        end
+                    else
+                        engine_config.language = saved_language
+                    end
                 end
                 
                 local saved_country = self.settings:readSetting(engine_name .. "_country")
@@ -1471,7 +1498,7 @@ function WebBrowser:loadSettings()
     end
 end
 
-function WebBrowser:saveSettings()
+function WebBrowser:saveSettings(specific_engine)
     if not self.settings then
         return
     end
@@ -1482,12 +1509,24 @@ function WebBrowser:saveSettings()
         end
         
         local engines = CONFIG.engines or {}
-        for engine_name, engine_config in pairs(engines) do
-            if engine_config.language then
-                self.settings:saveSetting(engine_name .. "_language", engine_config.language)
+        if specific_engine then
+            local engine_config = engines[specific_engine]
+            if engine_config then
+                if engine_config.language then
+                    self.settings:saveSetting(specific_engine .. "_language", engine_config.language)
+                end
+                if engine_config.country then
+                    self.settings:saveSetting(specific_engine .. "_country", engine_config.country)
+                end
             end
-            if engine_config.country then
-                self.settings:saveSetting(engine_name .. "_country", engine_config.country)
+        else
+            for engine_name, engine_config in pairs(engines) do
+                if engine_config.language then
+                    self.settings:saveSetting(engine_name .. "_language", engine_config.language)
+                end
+                if engine_config.country then
+                    self.settings:saveSetting(engine_name .. "_country", engine_config.country)
+                end
             end
         end
         
@@ -1876,27 +1915,18 @@ function WebBrowser:showLanguageSettings()
         return
     end
 
-    local is_duckduckgo = engine_name == "duckduckgo"
     local fields = {}
 
-    if is_duckduckgo then
-        table.insert(fields, {
-            text = config.language or "en-US",
-            hint = _("Language (e.g., tr-TR, en-US, pt-BR)"),
-            input_type = "string",
-        })
-    else
-        table.insert(fields, {
-            text = config.language or "en",
-            hint = _("Language (e.g., tr, en, pt)"),
-            input_type = "string",
-        })
-        table.insert(fields, {
-            text = config.country or "",
-            hint = _("Country (e.g., tr, us, br)"),
-            input_type = "string",
-        })
-    end
+    table.insert(fields, {
+        text = config.language or "en",
+        hint = _("Language (e.g., tr, en, pt, tzh)"),
+        input_type = "string",
+    })
+    table.insert(fields, {
+        text = config.country or "",
+        hint = _("Country (e.g., tr, us, br, tw)"),
+        input_type = "string",
+    })
 
     local settings_dialog
     settings_dialog = MultiInputDialog:new {
@@ -1916,22 +1946,22 @@ function WebBrowser:showLanguageSettings()
                     background = Blitbuffer.COLOR_WHITE,
                     is_enter_default = true,
                     callback = function()
-                        local new_language = settings_dialog:getInputText(1) or ""
+                        local fields = settings_dialog:getFields()
+                        
+                        local new_language = fields[1] or ""
                         new_language = new_language:gsub("^%s+", ""):gsub("%s+$", "")
+
+                        local new_country = fields[2] or ""
+                        new_country = new_country:gsub("^%s+", ""):gsub("%s+$", "")
 
                         if new_language ~= "" then
                             config.language = new_language
                         end
-
-                        if not is_duckduckgo then
-                            local new_country = settings_dialog:getInputText(2) or ""
-                            new_country = new_country:gsub("^%s+", ""):gsub("%s+$", "")
-                            if new_country ~= "" then
-                                config.country = new_country
-                            end
+                        if new_country ~= "" then
+                            config.country = new_country
                         end
 
-                        self:saveSettings()
+                        self:saveSettings(engine_name)
                         UIManager:close(settings_dialog)
                         UIManager:show(InfoMessage:new {
                             text = _("Settings saved successfully"),

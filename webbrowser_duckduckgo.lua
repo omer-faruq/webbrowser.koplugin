@@ -11,19 +11,26 @@ local DuckDuckGo = {}
 local DEFAULT_TIMEOUT = 15
 local DEFAULT_MAXTIME = 30
 
-local function fetch(url, timeout, maxtime)
+local function fetch(url, timeout, maxtime, accept_language)
     local response_chunks = {}
     socketutil:set_timeout(timeout or DEFAULT_TIMEOUT, maxtime or DEFAULT_MAXTIME)
+    
+    local headers = {
+        ["user-agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    if accept_language then
+        headers["accept-language"] = accept_language
+    end
+    
     local request = {
         url = url,
         method = "GET",
         sink = ltn12.sink.table(response_chunks),
-        headers = {
-            ["user-agent"] = "Mozilla/5.0 (compatible; KOReader)"
-        }
+        headers = headers
     }
 
-    local code, headers, status = socket.skip(1, socket_http.request(request))
+    local code, response_headers, status = socket.skip(1, socket_http.request(request))
     socketutil:reset_timeout()
 
     if not code then
@@ -35,7 +42,7 @@ local function fetch(url, timeout, maxtime)
         return nil, status or tostring(code)
     end
 
-    return table.concat(response_chunks), headers
+    return table.concat(response_chunks), response_headers
 end
 
 local function extract_text(node)
@@ -87,61 +94,6 @@ local function find_first_child_with_class(node, tag_name, class_name)
     return nil
 end
 
-local function normalize_language_code(code)
-    if not code or code == "" then
-        return "en-us"
-    end
-    
-    local lower_code = code:lower()
-    local parts = {}
-    for part in lower_code:gmatch("[^-]+") do
-        table.insert(parts, part)
-    end
-    
-    if #parts ~= 2 then
-        return lower_code
-    end
-    
-    local first, second = parts[1], parts[2]
-    
-    local known_countries = {
-        br = true, tr = true, us = true, uk = true, au = true, ca = true,
-        de = true, fr = true, es = true, it = true, nl = true, pl = true,
-        ru = true, jp = true, cn = true, kr = true, ["in"] = true, za = true,
-        mx = true, ar = true, cl = true, co = true, pe = true, ve = true,
-        at = true, be = true, ch = true, cz = true, dk = true, ee = true,
-        fi = true, gr = true, hr = true, hu = true, ie = true, il = true,
-        lt = true, lv = true, no = true, nz = true, ph = true, pt = true,
-        ro = true, se = true, sg = true, sk = true, sl = true, th = true,
-        tw = true, ua = true, vn = true, hk = true, id = true, my = true,
-        bg = true, xa = true, ct = true, xl = true, ue = true, wt = true,
-    }
-    
-    local known_languages = {
-        en = true, pt = true, es = true, fr = true, de = true, it = true,
-        nl = true, pl = true, ru = true, tr = true, ar = true, zh = true,
-        ja = true, ko = true, he = true, el = true, cs = true, da = true,
-        et = true, fi = true, hu = true, id = true, ms = true, no = true,
-        ro = true, sk = true, sl = true, sv = true, th = true, uk = true,
-        vi = true, bg = true, hr = true, lt = true, lv = true, ca = true,
-        tl = true, tzh = true,
-    }
-    
-    if #first == 2 and #second == 2 then
-        if known_languages[first] and known_countries[second] then
-            return second .. "-" .. first
-        end
-    elseif (#first == 2 and #second == 3) or (#first == 3 and #second == 2) then
-        if known_languages[first] and known_countries[second] then
-            return second .. "-" .. first
-        elseif known_languages[second] and known_countries[first] then
-            return lower_code
-        end
-    end
-    
-    return lower_code
-end
-
 local function parse_results(html)
     local results = {}
     local root = HtmlParser.parse(html)
@@ -173,12 +125,17 @@ function DuckDuckGo.search(query, opts)
     local settings = opts or {}
     DuckDuckGo.base_url = settings.base_url or "https://duckduckgo.com"
     DuckDuckGo.search_path = settings.search_path or "/html/"
-    local language = settings.kl or settings.language or "en-US"
-    DuckDuckGo.language = normalize_language_code(language)
+    
+    local country = (settings.country or "us"):lower()
+    local language = (settings.language or "en"):lower()
+    local kl = country .. "-" .. language
+    
+    local accept_language = language .. "-" .. country:upper() .. "," .. language .. ";q=0.9"
+    
     DuckDuckGo.max_results = settings.max_results or 50
 
-    local query_url = string.format("%s%s?q=%s&kl=%s&kp=1&kz=1", DuckDuckGo.base_url, DuckDuckGo.search_path, socket_url.escape(query), DuckDuckGo.language)
-    local html, err = fetch(query_url)
+    local query_url = string.format("%s%s?q=%s&kl=%s&kp=1&kz=1", DuckDuckGo.base_url, DuckDuckGo.search_path, socket_url.escape(query), kl)
+    local html, err = fetch(query_url, nil, nil, accept_language)
     if not html then
         return nil, err or "Failed to fetch results"
     end
