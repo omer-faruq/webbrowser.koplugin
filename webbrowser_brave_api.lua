@@ -66,7 +66,20 @@ local function extract_error_message(body, fallback)
     end
 
     if type(decoded.error) == "table" then
-        return decoded.error.message or decoded.error.code or fallback
+        local detail = decoded.error.detail
+        if type(decoded.error.meta) == "table" and type(decoded.error.meta.errors) == "table" then
+            local first_error = decoded.error.meta.errors[1]
+            if type(first_error) == "table" then
+                local param_name = type(first_error.loc) == "table" and first_error.loc[2] or "parameter"
+                local input_value = first_error.input
+                if detail and param_name and input_value then
+                    return string.format("%s (%s: '%s')", detail, param_name, tostring(input_value))
+                elseif detail and param_name then
+                    return string.format("%s (%s)", detail, param_name)
+                end
+            end
+        end
+        return decoded.error.message or decoded.error.detail or decoded.error.code or fallback
     end
 
     if type(decoded.message) == "string" and decoded.message ~= "" then
@@ -188,9 +201,20 @@ function BraveApi.search(query, opts)
         offset = settings.offset or 0,
     }
 
-    local search_lang = settings.search_lang or settings.language or settings.lang
+    local search_lang = settings.search_lang
+    if not search_lang or search_lang == "" then
+        local lang = settings.language
+        local country_code = settings.country
+        if lang and lang ~= "" then
+            if country_code and country_code ~= "" then
+                search_lang = lang:lower() .. "-" .. country_code:lower()
+            else
+                search_lang = lang:lower()
+            end
+        end
+    end
     if search_lang and search_lang ~= "" then
-        params.search_lang = search_lang:lower()
+        params.search_lang = search_lang
     end
 
     local country = settings.country
