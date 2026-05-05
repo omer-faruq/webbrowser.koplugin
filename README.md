@@ -15,12 +15,14 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **DuckDuckGo HTML search endpoint** (`https://duckduckgo.com/html/`): Provides ad-free search results optimized for lightweight clients.
 - **Jina AI Markdown gateway** (`https://r.jina.ai/`): Converts source web pages to Markdown before they are shown inside KOReader.
 - **Brave Search API** (`https://api.search.brave.com/res/v1/web/search`): Supplies JSON search results when the Brave API engine is enabled and now supports the in-app **Load more** button to fetch additional pages without losing the current list. **Recommended for sustained use.**
+- **Tavily Search API** (`https://api.tavily.com/search`): Provides LLM-optimized search results with advanced filtering options including search depth control, topic filtering, and country boosting. **Recommended for high-quality, AI-ready search results.**
 - **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): ⚠️ **DEPRECATED** - Google has discontinued the "entire web" search feature. Existing users can continue until January 2027, but new users cannot create search engines that cover the entire web. See [deprecation notice](https://support.google.com/programmable-search/answer/12397162). **Please migrate to Brave API or DuckDuckGo.**
 
 ## Search Engine Reliability
 - **DuckDuckGo rate limiting**: While convenient, the HTML endpoint is prone to aggressive throttling and may flag repeated traffic as a bot, causing searches to fail after short sessions.
-- **Brave API recommendation**: For sustained use, switch the engine to Brave and supply a personal API key. Authenticated requests are far less likely to be throttled and provide more consistent long-term access. **This is now the recommended primary search engine.**
-- **Google Custom Search deprecation**: Google has discontinued the "entire web" search capability. Existing search engines will work until January 2027, but new users cannot create engines that search the entire web. We strongly recommend migrating to Brave API for the best experience.
+- **Brave API recommendation**: For sustained use, switch the engine to Brave and supply a personal API key. Authenticated requests are far less likely to be throttled and provide more consistent long-term access. **Recommended for general-purpose searches.**
+- **Tavily API recommendation**: Optimized for LLM applications with high-quality, semantically relevant results. Offers advanced filtering (search depth, topic, country) and generous free tier (1,000 credits/month). **Recommended for high-quality, AI-ready search results.**
+- **Google Custom Search deprecation**: Google has discontinued the "entire web" search capability. Existing search engines will work until January 2027, but new users cannot create engines that search the entire web. We strongly recommend migrating to Brave API or Tavily API for the best experience.
 
 ## Brave API Setup
 - **Obtain an API key**: Create or sign in to your Brave account and generate a key at [Brave Search Dashboard](https://api-dashboard.search.brave.com/app/dashboard).
@@ -31,6 +33,16 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
   - **Country**: Enter the 2-letter country code (e.g., `US`, `BR`, `TR`, `GB`, `CN`, `TW`)
   - **Chinese languages**: Use `zh-hans` for Simplified Chinese or `zh-hant` for Traditional Chinese in the language field, with `CN` or `TW` in the country field
   - **How it works**: The plugin automatically combines these values when needed (e.g., `pt` + `BR` → `pt-br`, `en` + `GB` → `en-gb`, `zh-hans` + `CN` → `zh-hans`). For most languages, only the language code is sent to the API (e.g., `en` + `US` → `en`).
+
+## Tavily API Setup
+- **Obtain an API key**: Sign up at [Tavily](https://app.tavily.com/) and get your API key from the dashboard.
+- **Configure the plugin**: Add your key to `webbrowser_configuration.lua` under `engines.tavily_api.api_key`.
+- **Free-tier limits**: 1,000 API credits per month. Basic/fast/ultra-fast searches cost 1 credit, advanced searches cost 2 credits.
+- **Configure settings**: Access Tavily-specific settings through the in-app dialog (Tools → Web Browser → Settings → Configure Settings):
+  - **Search depth**: Choose between `basic` (balanced), `advanced` (highest relevance, 2 credits), `fast` (lower latency), or `ultra-fast` (minimal latency)
+  - **Topic**: Select `general` for broad searches, `news` for real-time updates, or `finance` for financial data
+  - **Country**: Boost results from a specific country (e.g., `turkey`, `united states`, `brazil`) - **Note**: Not supported with `fast` or `ultra-fast` search depth
+- **Detailed documentation**: See [Tavily API Guide](https://github.com/omer-faruq/webbrowser.koplugin/wiki/Tavily-Search-API-Integration) for advanced configuration options including time filters, domain filtering, and content options.
 
 ## Google Custom Search Setup
 ⚠️ **DEPRECATED - NOT RECOMMENDED FOR NEW USERS**

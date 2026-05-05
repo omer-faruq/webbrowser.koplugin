@@ -1,6 +1,6 @@
 return {
-    engine = "brave_api", -- options: "duckduckgo", "brave_api", "google_api" (deprecated)
-    -- RECOMMENDED: Use "brave_api" for best reliability and sustained use.
+    engine = "brave_api", -- options: "duckduckgo", "brave_api", "tavily_api", "google_api" (deprecated)
+    -- RECOMMENDED: Use "brave_api" or "tavily_api" for best reliability and sustained use.
     -- Google API is deprecated for new users (existing users can use until January 2027).
 
     engines = {
@@ -31,6 +31,40 @@ return {
             safesearch = "moderate", -- https://api-dashboard.search.brave.com/app/documentation/web-search/query
             max_results = 20,
             page_size = 20,
+        },
+        tavily_api = {
+            name = "tavily_api",
+            display_name = "Tavily API",
+            base_url = "https://api.tavily.com/search",
+            api_key = "your-api-key", -- Get your API key from https://app.tavily.com/
+            -- Search depth controls latency vs. relevance tradeoff:
+            --   "basic": Balanced option (1 API credit)
+            --   "advanced": Highest relevance with increased latency (2 API credits)
+            --   "fast": Lower latency, good relevance (1 API credit)
+            --   "ultra-fast": Minimizes latency (1 API credit)
+            search_depth = "basic",
+            -- Topic: "general" for broad searches, "news" for real-time updates, "finance" for financial data
+            topic = "general",
+            -- Optional: country name to boost results from specific country (lowercase, e.g., "turkey", "united states", "brazil", "china")
+            -- See full list: https://docs.tavily.com/documentation/search#country
+            country = nil,
+            -- Optional: time range filter ("day", "week", "month", "year")
+            time_range = nil,
+            -- Optional: specific date range (format: "YYYY-MM-DD")
+            start_date = nil,
+            end_date = nil,
+            -- Optional: include LLM-generated answer (false, "basic", "advanced")
+            include_answer = false,
+            -- Optional: include cleaned HTML content (false, "markdown", "text")
+            include_raw_content = false,
+            -- Optional: include images in results
+            include_images = false,
+            include_image_descriptions = false,
+            include_favicon = false,
+            -- Optional: domain filters (arrays of domain strings)
+            include_domains = {},
+            exclude_domains = {},
+            max_results = 20,
         },
         google_api = {
             -- DEPRECATED: Google discontinued "entire web" search for new users.

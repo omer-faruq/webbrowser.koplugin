@@ -57,12 +57,15 @@ local SearchEngines = {
     duckduckgo = require("webbrowser_duckduckgo"),
     brave_api = require("webbrowser_brave_api"),
     google_api = require("webbrowser_google_api"),
+    tavily_api = require("webbrowser_tavily_api"),
 }
 
 local GOOGLE_DEFAULT_BATCH_SIZE = 10
 local GOOGLE_API_MAX_TOTAL = 100
 local BRAVE_DEFAULT_BATCH_SIZE = 10
 local BRAVE_API_MAX_TOTAL = 200
+local TAVILY_DEFAULT_BATCH_SIZE = 10
+local TAVILY_API_MAX_TOTAL = 20
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
@@ -1829,7 +1832,21 @@ function WebBrowser:showEngineSettings()
                 end,
             },
         },
-        {
+    }
+
+    if current_engine == "tavily_api" then
+        table.insert(buttons, {
+            {
+                text = _("Configure Settings"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(engine_settings_dialog)
+                    self:showTavilySettings()
+                end,
+            },
+        })
+    elseif current_engine ~= "duckduckgo" then
+        table.insert(buttons, {
             {
                 text = _("Configure Language/Country"),
                 background = Blitbuffer.COLOR_WHITE,
@@ -1838,18 +1855,19 @@ function WebBrowser:showEngineSettings()
                     self:showLanguageSettings()
                 end,
             },
-        },
+        })
+    end
+
+    table.insert(buttons, {
         {
-            {
-                text = _("Reset to Config Defaults"),
-                background = Blitbuffer.COLOR_WHITE,
-                callback = function()
-                    UIManager:close(engine_settings_dialog)
-                    self:resetToConfigDefaults()
-                end,
-            },
+            text = _("Reset to Config Defaults"),
+            background = Blitbuffer.COLOR_WHITE,
+            callback = function()
+                UIManager:close(engine_settings_dialog)
+                self:resetToConfigDefaults()
+            end,
         },
-    }
+    })
 
     engine_settings_dialog = ButtonDialog:new {
         title = string.format(_("Search Engine: %s"), engine_display),
@@ -1867,7 +1885,7 @@ function WebBrowser:showEngineSelector()
     local current_engine = self:getSelectedEngineName()
     local buttons = {}
 
-    local engine_order = {"duckduckgo", "brave_api", "google_api"}
+    local engine_order = {"duckduckgo", "brave_api", "tavily_api", "google_api"}
     for i, engine_name in ipairs(engine_order) do
         local engine_config = engines[engine_name]
         if engine_config then
@@ -1906,6 +1924,94 @@ function WebBrowser:showEngineSelector()
         buttons = buttons,
     }
     UIManager:show(self.engine_selector_dialog)
+end
+
+function WebBrowser:showTavilySettings()
+    if CONFIG_MISSING then
+        return
+    end
+
+    local config, engine_name = self:getSearchEngineConfig()
+    if not config then
+        return
+    end
+
+    local fields = {}
+    
+    table.insert(fields, {
+        text = config.search_depth or "basic",
+        hint = _("Search depth (basic, advanced, fast, ultra-fast)"),
+        input_type = "string",
+    })
+    table.insert(fields, {
+        text = config.topic or "general",
+        hint = _("Topic (general, news, finance)"),
+        input_type = "string",
+    })
+    table.insert(fields, {
+        text = config.country or "",
+        hint = _("Country (e.g., turkey, united states) - Not supported with fast/ultra-fast"),
+        input_type = "string",
+    })
+
+    local settings_dialog
+    settings_dialog = MultiInputDialog:new {
+        title = _("Tavily Settings"),
+        fields = fields,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    callback = function()
+                        UIManager:close(settings_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    is_enter_default = true,
+                    callback = function()
+                        local fields = settings_dialog:getFields()
+                        
+                        local new_search_depth = fields[1] or ""
+                        new_search_depth = new_search_depth:gsub("^%s+", ""):gsub("%s+$", "")
+                        
+                        local new_topic = fields[2] or ""
+                        new_topic = new_topic:gsub("^%s+", ""):gsub("%s+$", "")
+                        
+                        local new_country = fields[3] or ""
+                        new_country = new_country:gsub("^%s+", ""):gsub("%s+$", "")
+                        
+                        if new_search_depth ~= "" then
+                            config.search_depth = new_search_depth
+                        end
+                        
+                        if new_topic ~= "" then
+                            config.topic = new_topic
+                        end
+
+                        if new_search_depth == "fast" or new_search_depth == "ultra-fast" then
+                            config.country = nil
+                        elseif new_country ~= "" then
+                            config.country = new_country
+                        else
+                            config.country = nil
+                        end
+
+                        self:saveSettings(engine_name)
+                        UIManager:close(settings_dialog)
+                        UIManager:show(InfoMessage:new {
+                            text = _("Settings saved successfully"),
+                            timeout = 2,
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(settings_dialog)
+    settings_dialog:onShowKeyboard()
 end
 
 function WebBrowser:showLanguageSettings()
@@ -2133,7 +2239,10 @@ function WebBrowser:performSearch(query)
     if not results or #results == 0 then
         UIManager:show(InfoMessage:new {
             text = err or _("No results found."),
-            timeout = 3,
+            timeout = 15,
+            dismiss_callback = function()
+                return true
+            end,
         })
         return
     end
