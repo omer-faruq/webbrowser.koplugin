@@ -1,5 +1,7 @@
 return {
-    engine = "brave_api", -- options: "duckduckgo", "brave_api" , "google_api"
+    engine = "brave_api", -- options: "duckduckgo", "brave_api", "google_api" (deprecated)
+    -- RECOMMENDED: Use "brave_api" for best reliability and sustained use.
+    -- Google API is deprecated for new users (existing users can use until January 2027).
 
     engines = {
         duckduckgo = {
@@ -30,7 +32,12 @@ return {
             max_results = 20,
             page_size = 20,
         },
-        google_api = { --setup instructions: https://github.com/omer-faruq/webbrowser.koplugin/wiki/Google-Custom-Search-API-Setup-(Free-Tier)
+        google_api = {
+            -- DEPRECATED: Google discontinued "entire web" search for new users.
+            -- Existing users can continue until January 2027.
+            -- New users: Please use brave_api (recommended) or duckduckgo instead.
+            -- See: https://support.google.com/programmable-search/answer/12397162
+            -- Setup instructions (existing users only): https://github.com/omer-faruq/webbrowser.koplugin/wiki/Google-Custom-Search-API-Setup-(Free-Tier)
             name= "google_api",
             display_name = "Google API",
             base_url = "https://customsearch.googleapis.com/customsearch/v1",

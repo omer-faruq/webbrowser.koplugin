@@ -7,6 +7,25 @@ local Utils = require("webbrowser_utils")
 
 local GoogleApi = {}
 
+--[[
+    DEPRECATION NOTICE:
+    
+    Google has discontinued the "entire web" search feature for Programmable Search Engines.
+    
+    - Existing users: Can continue using their search engines until January 2027
+    - New users: Cannot create new search engines that search the entire web
+    
+    See: https://support.google.com/programmable-search/answer/12397162
+    See: https://programmablesearchengine.googleblog.com/2026/01/updates-to-our-web-search-products.html
+    
+    RECOMMENDED ALTERNATIVES:
+    - Brave Search API (recommended for sustained use)
+    - DuckDuckGo HTML endpoint (free but rate limited)
+    
+    This module will remain in the codebase to support existing users until the January 2027 deadline,
+    but new users should configure Brave API or DuckDuckGo instead.
+--]]
+
 local DEFAULT_TIMEOUT = 15
 local DEFAULT_MAXTIME = 30
 local DEFAULT_PAGE_SIZE = 10
