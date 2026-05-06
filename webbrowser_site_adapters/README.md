@@ -100,3 +100,4 @@ local ok, body, headers = http.request{
   Open Graph metadata if the embed call fails. **Comments and reactions are
   not available**: the embed surface omits them and the only mobile/touch
   surfaces that used to expose them now redirect to a login page.
+* Also check the related [**discussion** topics](https://github.com/omer-faruq/webbrowser.koplugin/discussions?discussions_q=label%3Awebsite-adapter)
