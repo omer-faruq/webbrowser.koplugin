@@ -16,12 +16,14 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **Jina AI Markdown gateway** (`https://r.jina.ai/`): Converts source web pages to Markdown before they are shown inside KOReader.
 - **Brave Search API** (`https://api.search.brave.com/res/v1/web/search`): Supplies JSON search results when the Brave API engine is enabled and now supports the in-app **Load more** button to fetch additional pages without losing the current list. **Recommended for sustained use.**
 - **Tavily Search API** (`https://api.tavily.com/search`): Provides LLM-optimized search results with advanced filtering options including search depth control, topic filtering, and country boosting. **Recommended for high-quality, AI-ready search results.**
+- **Exa Search API** (`https://api.exa.ai/search`): Delivers embeddings-based neural search with multiple search types (neural, fast, auto, deep variants, instant) and category filtering (company, research paper, news, people, etc.). Supports up to 100 results per query with flexible search algorithms.
 - **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): ⚠️ **DEPRECATED** - Google has discontinued the "entire web" search feature. Existing users can continue until January 2027, but new users cannot create search engines that cover the entire web. See [deprecation notice](https://support.google.com/programmable-search/answer/12397162). **Please migrate to Brave API or DuckDuckGo.**
 
 ## Search Engine Reliability
 - **DuckDuckGo rate limiting**: While convenient, the HTML endpoint is prone to aggressive throttling and may flag repeated traffic as a bot, causing searches to fail after short sessions.
 - **Brave API recommendation**: For sustained use, switch the engine to Brave and supply a personal API key. Authenticated requests are far less likely to be throttled and provide more consistent long-term access. **Recommended for general-purpose searches.**
 - **Tavily API recommendation**: Optimized for LLM applications with high-quality, semantically relevant results. Offers advanced filtering (search depth, topic, country) and generous free tier (1,000 credits/month). **Recommended for high-quality, AI-ready search results.**
+- **Exa API recommendation**: Provides neural search with embeddings-based ranking and multiple search algorithms. Excellent for finding specific types of content (research papers, company info, people profiles) with category filtering. Supports up to 100 results per query.
 - **Google Custom Search deprecation**: Google has discontinued the "entire web" search capability. Existing search engines will work until January 2027, but new users cannot create engines that search the entire web. We strongly recommend migrating to Brave API or Tavily API for the best experience.
 
 ## Brave API Setup
@@ -43,6 +45,16 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
   - **Topic**: Select `general` for broad searches, `news` for real-time updates, or `finance` for financial data
   - **Country**: Boost results from a specific country (e.g., `turkey`, `united states`, `brazil`) - **Note**: Not supported with `fast` or `ultra-fast` search depth
 - **Detailed documentation**: See [Tavily API Guide](https://github.com/omer-faruq/webbrowser.koplugin/wiki/Tavily-Search-API-Integration) for advanced configuration options including time filters, domain filtering, and content options.
+
+## Exa API Setup
+- **Obtain an API key**: Sign up at [Exa](https://exa.ai/) and generate your API key from the [dashboard](https://dashboard.exa.ai/api-keys).
+- **Configure the plugin**: Add your key to `webbrowser_configuration.lua` under `engines.exa_api.api_key`.
+- **Free-tier limits**: Check the [Exa pricing page](https://exa.ai/pricing) for current limits and quotas.
+- **Configure settings**: Access Exa-specific settings through the in-app dialog (Tools → Web Browser → Settings → Configure Settings):
+  - **Search Type**: Choose between `neural` (embeddings-based), `fast` (streamlined), `auto` (default, intelligently combines methods), `deep-lite`, `deep`, `deep-reasoning`, or `instant` (lowest latency)
+  - **Result Category**: Optionally filter by category: `company`, `research paper`, `news`, `personal site`, `financial report`, or `people` (LinkedIn profiles)
+  - **User Location**: Set your 2-letter country code (e.g., `US`, `TR`, `GB`, `CN`) to personalize results
+- **Category limitations**: The `company` and `people` categories have limited filter support and don't support date/domain filters. See [Exa documentation](https://docs.exa.ai/) for details.
 
 ## Google Custom Search Setup
 ⚠️ **DEPRECATED - NOT RECOMMENDED FOR NEW USERS**

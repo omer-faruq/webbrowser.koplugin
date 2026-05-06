@@ -58,6 +58,7 @@ local SearchEngines = {
     brave_api = require("webbrowser_brave_api"),
     google_api = require("webbrowser_google_api"),
     tavily_api = require("webbrowser_tavily_api"),
+    exa_api = require("webbrowser_exa_api"),
 }
 
 local GOOGLE_DEFAULT_BATCH_SIZE = 10
@@ -66,6 +67,8 @@ local BRAVE_DEFAULT_BATCH_SIZE = 10
 local BRAVE_API_MAX_TOTAL = 200
 local TAVILY_DEFAULT_BATCH_SIZE = 10
 local TAVILY_API_MAX_TOTAL = 20
+local EXA_DEFAULT_BATCH_SIZE = 10
+local EXA_API_MAX_TOTAL = 100
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
@@ -1845,6 +1848,17 @@ function WebBrowser:showEngineSettings()
                 end,
             },
         })
+    elseif current_engine == "exa_api" then
+        table.insert(buttons, {
+            {
+                text = _("Configure Settings"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(engine_settings_dialog)
+                    self:showExaSettings()
+                end,
+            },
+        })
     elseif current_engine ~= "duckduckgo" then
         table.insert(buttons, {
             {
@@ -1885,7 +1899,7 @@ function WebBrowser:showEngineSelector()
     local current_engine = self:getSelectedEngineName()
     local buttons = {}
 
-    local engine_order = {"duckduckgo", "brave_api", "tavily_api", "google_api"}
+    local engine_order = {"duckduckgo", "brave_api", "tavily_api", "exa_api", "google_api"}
     for i, engine_name in ipairs(engine_order) do
         local engine_config = engines[engine_name]
         if engine_config then
@@ -1997,6 +2011,96 @@ function WebBrowser:showTavilySettings()
                             config.country = new_country
                         else
                             config.country = nil
+                        end
+
+                        self:saveSettings(engine_name)
+                        UIManager:close(settings_dialog)
+                        UIManager:show(InfoMessage:new {
+                            text = _("Settings saved successfully"),
+                            timeout = 2,
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(settings_dialog)
+    settings_dialog:onShowKeyboard()
+end
+
+function WebBrowser:showExaSettings()
+    if CONFIG_MISSING then
+        return
+    end
+
+    local config, engine_name = self:getSearchEngineConfig()
+    if not config then
+        return
+    end
+
+    local fields = {}
+    
+    table.insert(fields, {
+        text = config.search_type or "auto",
+        hint = _("Search type (neural, fast, auto, deep-lite, deep, deep-reasoning, instant)"),
+        input_type = "string",
+    })
+    table.insert(fields, {
+        text = config.category or "",
+        hint = _("Category (company, research paper, news, personal site, financial report, people)"),
+        input_type = "string",
+    })
+    table.insert(fields, {
+        text = config.user_location or "",
+        hint = _("User location (2-letter country code, e.g., US, TR, GB)"),
+        input_type = "string",
+    })
+
+    local settings_dialog
+    settings_dialog = MultiInputDialog:new {
+        title = _("Exa Settings"),
+        fields = fields,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    callback = function()
+                        UIManager:close(settings_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    is_enter_default = true,
+                    callback = function()
+                        local fields = settings_dialog:getFields()
+                        
+                        local new_search_type = fields[1] or ""
+                        new_search_type = new_search_type:gsub("^%s+", ""):gsub("%s+$", "")
+                        
+                        local new_category = fields[2] or ""
+                        new_category = new_category:gsub("^%s+", ""):gsub("%s+$", "")
+                        
+                        local new_user_location = fields[3] or ""
+                        new_user_location = new_user_location:gsub("^%s+", ""):gsub("%s+$", "")
+                        
+                        if new_search_type ~= "" then
+                            config.search_type = new_search_type
+                        else
+                            config.search_type = "auto"
+                        end
+                        
+                        if new_category ~= "" then
+                            config.category = new_category
+                        else
+                            config.category = nil
+                        end
+                        
+                        if new_user_location ~= "" then
+                            config.user_location = new_user_location
+                        else
+                            config.user_location = nil
                         end
 
                         self:saveSettings(engine_name)

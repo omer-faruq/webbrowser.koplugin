@@ -1,5 +1,5 @@
 return {
-    engine = "brave_api", -- options: "duckduckgo", "brave_api", "tavily_api", "google_api" (deprecated)
+    engine = "brave_api", -- options: "duckduckgo", "brave_api", "tavily_api", "exa_api", "google_api" (deprecated)
     -- RECOMMENDED: Use "brave_api" or "tavily_api" for best reliability and sustained use.
     -- Google API is deprecated for new users (existing users can use until January 2027).
 
@@ -64,6 +64,35 @@ return {
             -- Optional: domain filters (arrays of domain strings)
             include_domains = {},
             exclude_domains = {},
+            max_results = 20,
+        },
+        exa_api = {
+            name = "exa_api",
+            display_name = "Exa API",
+            base_url = "https://api.exa.ai/search",
+            api_key = "your-api-key", -- Get your API key from https://dashboard.exa.ai/api-keys
+            -- Search type controls the search algorithm:
+            --   "neural": Embeddings-based search
+            --   "fast": Streamlined search models
+            --   "auto": Intelligently combines neural and other methods (default)
+            --   "deep-lite": Lightweight synthesized output
+            --   "deep": Light deep search
+            --   "deep-reasoning": Base deep search
+            --   "instant": Lowest latency, optimized for real-time applications
+            search_type = "auto",
+            -- Optional: Result category to focus on
+            --   "company": Company pages (improved quality for finding company info)
+            --   "research paper": Academic research papers
+            --   "news": News articles
+            --   "personal site": Personal websites and blogs
+            --   "financial report": Financial reports and data
+            --   "people": LinkedIn profiles (improved quality for finding people)
+            -- Note: "company" and "people" categories have limited filter support
+            category = nil,
+            -- Optional: Two-letter ISO country code of the user (e.g., "US", "TR", "GB", "CN")
+            user_location = nil,
+            -- Optional: Include full page text in results (increases response size)
+            include_text = false,
             max_results = 20,
         },
         google_api = {
