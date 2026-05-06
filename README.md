@@ -19,6 +19,57 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **Exa Search API** (`https://api.exa.ai/search`): Delivers embeddings-based neural search with multiple search types (neural, fast, auto, deep variants, instant) and category filtering (company, research paper, news, people, etc.). Supports up to 100 results per query with flexible search algorithms.
 - **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): ⚠️ **DEPRECATED** - Google has discontinued the "entire web" search feature. Existing users can continue until January 2027, but new users cannot create search engines that cover the entire web. See [deprecation notice](https://support.google.com/programmable-search/answer/12397162). **Please migrate to Brave API or DuckDuckGo.**
 
+## Multiple Engine Profiles
+You can define multiple profiles for **any search engine type** with different API keys or settings.
+
+### Profile Naming Rules
+The profile key must be related to the engine type. The plugin matches profiles to engines in two ways:
+
+1. **Exact prefix match**: Profile key starts with the full engine type name
+   - `brave_api_personal` → matches `brave_api` engine ✓
+   - `tavily_api_research` → matches `tavily_api` engine ✓
+
+2. **First-word match**: First part (before underscore) matches the engine type's first part
+   - `brave_personal` → matches `brave_api` engine ✓ (both start with "brave")
+   - `tavily_research` → matches `tavily_api` engine ✓ (both start with "tavily")
+   - `google_work` → matches `google_api` engine ✓ (both start with "google")
+   - `exa_academic` → matches `exa_api` engine ✓ (both start with "exa")
+
+**What doesn't work:**
+- `personal_brave` → ✗ (doesn't start with "brave")
+- `my_tavily` → ✗ (doesn't start with "tavily")
+- `work_google` → ✗ (doesn't start with "google")
+
+### Configuration
+Each profile needs:
+- **Profile key**: Must match the engine type (see rules above)
+- **`name` field**: Set to the engine type (e.g., `name = "brave_api"`)
+- **`display_name` field**: Unique display name shown in the selector (e.g., `display_name = "Brave (Personal)"`)
+- **`visible` field** (optional): Set to `false` to hide from selector (default: `true`)
+  - Useful for temporarily disabling profiles without deleting them
+  - Hidden profiles can still be used if set as the active engine
+- **Other settings**: Same as the default engine config (api_key, language, etc.)
+
+### Examples
+See `webbrowser_configuration.sample.lua` for complete examples:
+```lua
+brave_personal = {
+    name = "brave_api",
+    display_name = "Brave (Personal)",
+    api_key = "your-personal-key",
+    ...
+}
+brave_work = {
+    name = "brave_api",
+    display_name = "Brave (Work)",
+    api_key = "your-work-key",
+    ...
+}
+```
+
+### Switching Profiles
+Use the engine selector: Tools → Web Browser → Settings → Select Search Engine
+
 ## Search Engine Reliability
 - **DuckDuckGo rate limiting**: While convenient, the HTML endpoint is prone to aggressive throttling and may flag repeated traffic as a bot, causing searches to fail after short sessions.
 - **Brave API recommendation**: For sustained use, switch the engine to Brave and supply a personal API key. Authenticated requests are far less likely to be throttled and provide more consistent long-term access. **Recommended for general-purpose searches.**

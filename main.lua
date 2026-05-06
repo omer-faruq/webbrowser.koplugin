@@ -1297,6 +1297,35 @@ function WebBrowser:openDirectUrl(raw_input)
     end)
 end
 
+function WebBrowser:extractEngineTypeFromProfileKey(profile_key)
+    if type(profile_key) ~= "string" then
+        return nil
+    end
+    
+    local normalized = profile_key:lower()
+    
+    if SearchEngines[normalized] then
+        return normalized
+    end
+    
+    for engine_type, _ in pairs(SearchEngines) do
+        if normalized:find("^" .. engine_type) then
+            return engine_type
+        end
+    end
+    
+    local first_part = normalized:match("^([^_]+)")
+    if first_part then
+        for engine_type, _ in pairs(SearchEngines) do
+            if engine_type:find("^" .. first_part) then
+                return engine_type
+            end
+        end
+    end
+    
+    return nil
+end
+
 function WebBrowser:getSelectedEngineName()
     local selected = CONFIG.engine
     if type(selected) == "string" then
@@ -1322,10 +1351,24 @@ function WebBrowser:getSelectedEngineName()
     return DEFAULT_SEARCH_ENGINE
 end
 
+function WebBrowser:getSelectedProfileKey()
+    local selected = CONFIG.engine
+    if type(selected) == "string" then
+        return selected:lower()
+    end
+    
+    return self:getSelectedEngineName()
+end
+
 function WebBrowser:getSearchEngineConfig()
     local engines = CONFIG.engines or {}
-    local engine_name = self:getSelectedEngineName()
-    local config = engines[engine_name]
+    local profile_key = self:getSelectedProfileKey()
+    local config = engines[profile_key]
+
+    if not config or type(config) ~= "table" then
+        local engine_name = self:getSelectedEngineName()
+        config = engines[engine_name]
+    end
 
     if not config or type(config) ~= "table" then
         config = engines[DEFAULT_SEARCH_ENGINE]
@@ -1335,14 +1378,14 @@ function WebBrowser:getSearchEngineConfig()
         config = {}
     end
 
-    return config, engine_name
+    return config, profile_key
 end
 
 function WebBrowser:getSearchEngineModule()
-    local config, engine_name = self:getSearchEngineConfig()
-    local normalized_name = (config.name and config.name:lower()) or engine_name or DEFAULT_SEARCH_ENGINE
-    local engine = SearchEngines[normalized_name] or SearchEngines[engine_name] or SearchEngines[DEFAULT_SEARCH_ENGINE]
-    return engine, config, normalized_name
+    local config, profile_key = self:getSearchEngineConfig()
+    local engine_type = (config.name and config.name:lower()) or self:extractEngineTypeFromProfileKey(profile_key) or DEFAULT_SEARCH_ENGINE
+    local engine = SearchEngines[engine_type] or SearchEngines[DEFAULT_SEARCH_ENGINE]
+    return engine, config, engine_type
 end
 
 function WebBrowser:getSearchEngineDisplayName()
@@ -1511,6 +1554,31 @@ function WebBrowser:loadSettings()
                 if saved_country and saved_country ~= "" then
                     engine_config.country = saved_country
                 end
+                
+                local saved_search_depth = self.settings:readSetting(engine_name .. "_search_depth")
+                if saved_search_depth and saved_search_depth ~= "" then
+                    engine_config.search_depth = saved_search_depth
+                end
+                
+                local saved_topic = self.settings:readSetting(engine_name .. "_topic")
+                if saved_topic and saved_topic ~= "" then
+                    engine_config.topic = saved_topic
+                end
+                
+                local saved_search_type = self.settings:readSetting(engine_name .. "_search_type")
+                if saved_search_type and saved_search_type ~= "" then
+                    engine_config.search_type = saved_search_type
+                end
+                
+                local saved_category = self.settings:readSetting(engine_name .. "_category")
+                if saved_category and saved_category ~= "" then
+                    engine_config.category = saved_category
+                end
+                
+                local saved_user_location = self.settings:readSetting(engine_name .. "_user_location")
+                if saved_user_location and saved_user_location ~= "" then
+                    engine_config.user_location = saved_user_location
+                end
             end
         end
     end
@@ -1536,6 +1604,21 @@ function WebBrowser:saveSettings(specific_engine)
                 if engine_config.country then
                     self.settings:saveSetting(specific_engine .. "_country", engine_config.country)
                 end
+                if engine_config.search_depth then
+                    self.settings:saveSetting(specific_engine .. "_search_depth", engine_config.search_depth)
+                end
+                if engine_config.topic then
+                    self.settings:saveSetting(specific_engine .. "_topic", engine_config.topic)
+                end
+                if engine_config.search_type then
+                    self.settings:saveSetting(specific_engine .. "_search_type", engine_config.search_type)
+                end
+                if engine_config.category then
+                    self.settings:saveSetting(specific_engine .. "_category", engine_config.category)
+                end
+                if engine_config.user_location then
+                    self.settings:saveSetting(specific_engine .. "_user_location", engine_config.user_location)
+                end
             end
         else
             for engine_name, engine_config in pairs(engines) do
@@ -1544,6 +1627,21 @@ function WebBrowser:saveSettings(specific_engine)
                 end
                 if engine_config.country then
                     self.settings:saveSetting(engine_name .. "_country", engine_config.country)
+                end
+                if engine_config.search_depth then
+                    self.settings:saveSetting(engine_name .. "_search_depth", engine_config.search_depth)
+                end
+                if engine_config.topic then
+                    self.settings:saveSetting(engine_name .. "_topic", engine_config.topic)
+                end
+                if engine_config.search_type then
+                    self.settings:saveSetting(engine_name .. "_search_type", engine_config.search_type)
+                end
+                if engine_config.category then
+                    self.settings:saveSetting(engine_name .. "_category", engine_config.category)
+                end
+                if engine_config.user_location then
+                    self.settings:saveSetting(engine_name .. "_user_location", engine_config.user_location)
                 end
             end
         end
@@ -1572,6 +1670,11 @@ function WebBrowser:resetToConfigDefaults()
             for engine_name in pairs(engines) do
                 self.settings:delSetting(engine_name .. "_language")
                 self.settings:delSetting(engine_name .. "_country")
+                self.settings:delSetting(engine_name .. "_search_depth")
+                self.settings:delSetting(engine_name .. "_topic")
+                self.settings:delSetting(engine_name .. "_search_type")
+                self.settings:delSetting(engine_name .. "_category")
+                self.settings:delSetting(engine_name .. "_user_location")
             end
             
             self.settings:flush()
@@ -1896,41 +1999,65 @@ function WebBrowser:showEngineSelector()
     end
 
     local engines = CONFIG.engines or {}
-    local current_engine = self:getSelectedEngineName()
+    local current_profile = self:getSelectedProfileKey()
     local buttons = {}
 
-    local engine_order = {"duckduckgo", "brave_api", "tavily_api", "exa_api", "google_api"}
-    for i, engine_name in ipairs(engine_order) do
-        local engine_config = engines[engine_name]
-        if engine_config then
-            local display_name = engine_config.display_name or engine_name
-            local is_selected = (engine_name == current_engine)
-            local button_text = is_selected and ("✓ " .. display_name) or display_name
-            
-            table.insert(buttons, {{
-                text = button_text,
-                background = Blitbuffer.COLOR_WHITE,
-                callback = function()
-                    UIManager:close(self.engine_selector_dialog)
-                    if engine_name ~= current_engine then
-                        CONFIG.engine = engine_name
-                        self:saveSettings()
-                        
-                        if self.search_dialog then
-                            UIManager:close(self.search_dialog)
-                            self.search_dialog = nil
-                        end
-                        
-                        UIManager:show(InfoMessage:new {
-                            text = string.format(_("Search engine changed to %s"), display_name),
-                            timeout = 2,
-                        })
-                        
-                        self:showSearchDialog()
-                    end
-                end,
-            }})
+    local profile_list = {}
+    for profile_key, engine_config in pairs(engines) do
+        if type(engine_config) == "table" then
+            local is_visible = engine_config.visible
+            if is_visible == nil then
+                is_visible = true
+            end
+            if is_visible then
+                table.insert(profile_list, {
+                    key = profile_key,
+                    config = engine_config,
+                })
+            end
         end
+    end
+
+    table.sort(profile_list, function(a, b)
+        local type_a = self:extractEngineTypeFromProfileKey(a.key) or ""
+        local type_b = self:extractEngineTypeFromProfileKey(b.key) or ""
+        if type_a ~= type_b then
+            local order = {duckduckgo = 1, brave_api = 2, tavily_api = 3, exa_api = 4, google_api = 5}
+            return (order[type_a] or 99) < (order[type_b] or 99)
+        end
+        return a.key < b.key
+    end)
+
+    for _, profile_entry in ipairs(profile_list) do
+        local profile_key = profile_entry.key
+        local engine_config = profile_entry.config
+        local display_name = engine_config.display_name or profile_key
+        local is_selected = (profile_key == current_profile)
+        local button_text = is_selected and ("✓ " .. display_name) or display_name
+        
+        table.insert(buttons, {{
+            text = button_text,
+            background = Blitbuffer.COLOR_WHITE,
+            callback = function()
+                UIManager:close(self.engine_selector_dialog)
+                if profile_key ~= current_profile then
+                    CONFIG.engine = profile_key
+                    self:saveSettings()
+                    
+                    if self.search_dialog then
+                        UIManager:close(self.search_dialog)
+                        self.search_dialog = nil
+                    end
+                    
+                    UIManager:show(InfoMessage:new {
+                        text = string.format(_("Search engine changed to %s"), display_name),
+                        timeout = 2,
+                    })
+                    
+                    self:showSearchDialog()
+                end
+            end,
+        }})
     end
 
     self.engine_selector_dialog = ButtonDialog:new {

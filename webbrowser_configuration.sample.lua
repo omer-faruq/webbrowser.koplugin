@@ -1,8 +1,38 @@
 return {
+    -- Selected engine profile key (can be engine type like "brave_api" or custom profile like "brave_personal")
     engine = "brave_api", -- options: "duckduckgo", "brave_api", "tavily_api", "exa_api", "google_api" (deprecated)
     -- RECOMMENDED: Use "brave_api" or "tavily_api" for best reliability and sustained use.
     -- Google API is deprecated for new users (existing users can use until January 2027).
+    -- 
+    -- MULTIPLE PROFILES: You can define multiple profiles for the same engine type.
+    -- 
+    -- Profile naming rules (the plugin matches profiles to engines in two ways):
+    -- 1. Exact prefix match: Profile key starts with full engine type
+    --    brave_api_personal → brave_api engine ✓
+    --    tavily_api_research → tavily_api engine ✓
+    -- 
+    -- 2. First-word match: First part (before _) matches engine type's first part
+    --    brave_personal → brave_api engine ✓ (both start with "brave")
+    --    tavily_research → tavily_api engine ✓ (both start with "tavily")
+    --    google_work → google_api engine ✓ (both start with "google")
+    --    exa_academic → exa_api engine ✓ (both start with "exa")
+    -- 
+    -- What doesn't work:
+    --    personal_brave → ✗ (doesn't start with "brave")
+    --    my_tavily → ✗ (doesn't start with "tavily")
+    -- 
+    -- Each profile must have:
+    --   - name = "<engine_type>" (e.g., name = "brave_api")
+    --   - display_name = "Your Display Name" (shown in selector)
+    --   - visible = true/false (optional, default: true) - set to false to hide from selector
+    --   - All other engine-specific settings (api_key, language, etc.)
+    -- 
+    -- Hiding profiles: Set visible = false to keep a profile in config but hide it from
+    -- the engine selector. Useful for temporarily disabling profiles without deleting them.
+    -- 
+    -- Then set: engine = "brave_personal" to use that profile.
 
+    -- Engine configurations
     engines = {
         duckduckgo = {
             name = "duckduckgo",
@@ -13,6 +43,7 @@ return {
             country = "us",
             max_results = 10,
         },
+        -- Default Brave API profile
         brave_api = {
             name = "brave_api",
             display_name = "Brave API",
@@ -32,6 +63,30 @@ return {
             max_results = 20,
             page_size = 20,
         },
+        -- Example: Additional Brave profiles (uncomment and configure as needed)
+        -- brave_personal = {
+        --     name = "brave_api",
+        --     display_name = "Brave (Personal)",
+        --     base_url = "https://api.search.brave.com/res/v1/web/search",
+        --     api_key = "your-personal-api-key",
+        --     language = "en",
+        --     country = "us",
+        --     safesearch = "moderate",
+        --     max_results = 20,
+        --     page_size = 20,
+        -- },
+        -- brave_work = {
+        --     name = "brave_api",
+        --     display_name = "Brave (Work)",
+        --     base_url = "https://api.search.brave.com/res/v1/web/search",
+        --     api_key = "your-work-api-key",
+        --     language = "en",
+        --     country = "us",
+        --     safesearch = "strict",
+        --     max_results = 20,
+        --     page_size = 20,
+        --     visible = false,  -- Hide from selector (optional, default: true)
+        -- },
         tavily_api = {
             name = "tavily_api",
             display_name = "Tavily API",
