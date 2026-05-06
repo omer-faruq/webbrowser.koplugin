@@ -29,7 +29,6 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 ## Brave API Setup
 - **Obtain an API key**: Create or sign in to your Brave account and generate a key at [Brave Search Dashboard](https://api-dashboard.search.brave.com/app/dashboard).
 - **Configure the plugin**: Store the issued key in `plugins/webbrowser.koplugin/webbrowser_configuration.lua` under `engines.brave_api.api_key` (or your preferred secure storage method).
-- **Free-tier limits**: 1 request per second and up to 2,000 queries per month. Consider caching or using DuckDuckGo for lighter usage to stay within the quota.
 - **Language & Country settings**: Configure search language and region through the in-app settings dialog (Tools → Web Browser → Settings → Configure Language/Country for Brave API):
   - **Language**: Enter the language code (e.g., `en`, `pt`, `tr`, `zh-hans`, `zh-hant`)
   - **Country**: Enter the 2-letter country code (e.g., `US`, `BR`, `TR`, `GB`, `CN`, `TW`)
