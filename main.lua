@@ -2028,7 +2028,7 @@ function WebBrowser:showEngineSelector()
         return a.key < b.key
     end)
 
-    for _, profile_entry in ipairs(profile_list) do
+    for idx, profile_entry in ipairs(profile_list) do
         local profile_key = profile_entry.key
         local engine_config = profile_entry.config
         local display_name = engine_config.display_name or profile_key
