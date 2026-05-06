@@ -46,7 +46,7 @@ return {
             -- Topic: "general" for broad searches, "news" for real-time updates, "finance" for financial data
             topic = "general",
             -- Optional: country name to boost results from specific country (lowercase, e.g., "turkey", "united states", "brazil", "china")
-            -- See full list: https://docs.tavily.com/documentation/search#country
+            -- See full list: https://docs.tavily.com/documentation/api-reference/endpoint/search#body-country
             country = nil,
             -- Optional: time range filter ("day", "week", "month", "year")
             time_range = nil,
