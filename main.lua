@@ -1923,7 +1923,8 @@ function WebBrowser:showEngineSettings()
         return
     end
 
-    local config, current_engine = self:getSearchEngineConfig()
+    local config, profile_key = self:getSearchEngineConfig()
+    local engine_type = self:extractEngineTypeFromProfileKey(profile_key)
     local engine_display = self:getSearchEngineDisplayName()
 
     local engine_settings_dialog
@@ -1940,7 +1941,7 @@ function WebBrowser:showEngineSettings()
         },
     }
 
-    if current_engine == "tavily_api" then
+    if engine_type == "tavily_api" then
         table.insert(buttons, {
             {
                 text = _("Configure Settings"),
@@ -1951,7 +1952,7 @@ function WebBrowser:showEngineSettings()
                 end,
             },
         })
-    elseif current_engine == "exa_api" then
+    elseif engine_type == "exa_api" then
         table.insert(buttons, {
             {
                 text = _("Configure Settings"),
@@ -1962,7 +1963,7 @@ function WebBrowser:showEngineSettings()
                 end,
             },
         })
-    elseif current_engine ~= "duckduckgo" then
+    elseif engine_type == "brave_api" or engine_type == "google_api" or engine_type == "duckduckgo" then
         table.insert(buttons, {
             {
                 text = _("Configure Language/Country"),
@@ -2250,17 +2251,21 @@ function WebBrowser:showLanguageSettings()
         return
     end
 
-    local config, engine_name = self:getSearchEngineConfig()
+    local config, profile_key = self:getSearchEngineConfig()
     if not config then
         return
     end
 
+    local engine_type = self:extractEngineTypeFromProfileKey(profile_key)
     local fields = {}
     
     local language_hint, country_hint
-    if engine_name == "brave_api" then
+    if engine_type == "brave_api" then
         language_hint = _("Language (e.g., en, pt, pt-br, en-gb, tr, zh-hans)")
         country_hint = _("Country (e.g., US, BR, GB, TR, CN, TW)")
+    elseif engine_type == "duckduckgo" then
+        language_hint = _("Language (e.g., en, pt, tr, zh)")
+        country_hint = _("Country (e.g., us, br, tr, cn)")
     else
         language_hint = _("Language (e.g., en, pt, tr, zh)")
         country_hint = _("Country (e.g., us, br, tr, cn)")
@@ -2310,7 +2315,7 @@ function WebBrowser:showLanguageSettings()
                             config.country = new_country
                         end
 
-                        self:saveSettings(engine_name)
+                        self:saveSettings(profile_key)
                         UIManager:close(settings_dialog)
                         UIManager:show(InfoMessage:new {
                             text = _("Settings saved successfully"),
