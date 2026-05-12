@@ -5,6 +5,11 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 ## Features
 - **Search dialog**: Launch queries directly from KOReader using a custom dialog tailored for e-ink interaction, and open the **History** list to revisit recent searches without retyping them.
 - **Curated results list**: Browse plaintext summaries before opening pages, reducing bandwidth and rendering overhead. Long-press a result to open the context menu for quick actions such as saving a bookmark.
+- **RSS Reader integration** (optional): When the [RSS Reader plugin](https://github.com/omer-faruq/rssreader.koplugin) is installed, two additional buttons appear in the search result context menu:
+  - **Open sanitized**: Downloads and sanitizes the article using RSS Reader's content extraction pipeline (FiveFilters, Diffbot, Instaparser), then opens it in the Web Browser's cache directory for immediate reading.
+  - **Save sanitized**: Downloads and sanitizes the article, then saves it as an EPUB (with images) or HTML file to your configured save directory.
+  - **Automatic configuration**: Uses your RSS Reader sanitizer settings (API keys, active sanitizers, order) automatically.
+  - **Graceful fallback**: If RSS Reader is not installed, these buttons are hidden and the Web Browser functions normally.
 - **Flexible rendering modes**: Switch between Markdown, CRE, and MuPDF to match your preferred balance of readability and page fidelity.
 - **Direct URL navigation**: Use the Go button in the search dialog to open any URL without performing a search first.
 - **Expanded format support**: Follow links to EPUB, PDF, DJVU, CBZ, and other KOReader-supported documents directly from the results screen and continue reading in the appropriate viewer.
@@ -118,6 +123,59 @@ Google has [discontinued the "entire web" search feature](https://support.google
 - **Understand the limits**: The free tier covers up to 100 queries per day, with each request returning a maximum of ten results. No credit card is required for this quota.
 - **Configure the plugin**: Add your credentials to `webbrowser_configuration.lua` under `engines.google_api` to enable the Google engine inside KOReader.
 - **Migration recommended**: Consider switching to Brave API before the January 2027 deadline to avoid service interruption.
+
+## RSS Reader Integration
+
+The Web Browser plugin integrates seamlessly with the [RSS Reader](https://github.com/omer-faruq/rssreader.koplugin) plugin to provide advanced content extraction and sanitization capabilities.
+
+<details>
+<summary>Details:</summary>
+
+### Requirements
+- **RSS Reader plugin**: Must be installed in your KOReader plugins directory
+- **Optional**: Configure sanitizer API keys in RSS Reader for enhanced extraction (Diffbot, Instaparser)
+
+### How It Works
+When you long-press a search result, two additional buttons appear if RSS Reader is installed:
+
+1. **Open sanitized**
+   - Downloads the article from the URL
+   - Runs it through RSS Reader's sanitization pipeline:
+     - Tries configured sanitizers in order (FiveFilters → Diffbot → Instaparser)
+     - Extracts main content using CSS selectors
+     - Removes scripts, styles, and other clutter
+     - Adds source URL footer with QR code
+   - Saves to Web Browser's cache directory
+   - Opens immediately for reading
+
+2. **Save sanitized**
+   - Same sanitization process as "Open sanitized"
+   - Saves to your configured directory:
+     - First tries `save_to_directory` from Web Browser config
+     - Falls back to user-defined home directory
+     - Falls back to current directory
+   - Creates EPUB with images (if available) or HTML file
+   - Shows save location when complete
+
+### Configuration
+The integration automatically uses your RSS Reader configuration:
+- **Sanitizers**: Uses your configured sanitizers and API keys from `rssreader_configuration.lua`
+- **Order**: Respects your sanitizer priority order
+- **Active/Inactive**: Only uses sanitizers marked as active
+- **Features**: Applies your download_images and other feature settings
+
+### Example Workflow
+1. Search for "best coffee recipes"
+2. Long-press a promising result
+3. Tap "Open sanitized" to read immediately, or "Save sanitized" to archive for later
+4. The article is extracted, cleaned, and ready to read without ads or clutter
+
+### Graceful Degradation
+- If RSS Reader is not installed, the sanitization buttons are hidden
+- Web Browser continues to work normally with its built-in rendering modes
+- No errors or warnings appear
+
+</details>
 
 ## Rendering Modes
 - **Markdown**: Fetches content through the Jina AI Markdown gateway and displays it in the lightweight Markdown viewer.
