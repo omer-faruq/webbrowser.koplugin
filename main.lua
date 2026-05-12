@@ -3124,6 +3124,7 @@ function WebBrowser:showResultActions(result)
         end
     end
 
+    local dialog
     local buttons = {
         {
             {
@@ -3277,7 +3278,6 @@ function WebBrowser:showResultActions(result)
         })
     end
 
-    local dialog
     dialog = ButtonDialog:new {
         title = dialog_title,
         dismissable = true,
