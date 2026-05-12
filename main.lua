@@ -3114,92 +3114,174 @@ function WebBrowser:showResultActions(result)
         return target_url
     end
 
+    local rssreader_available = false
+    local rssreader_api = nil
+    do
+        local ok, api = pcall(require, "rssreader_external_api")
+        if ok and api and api.isAvailable() then
+            rssreader_available = true
+            rssreader_api = api
+        end
+    end
+
+    local buttons = {
+        {
+            {
+                text = _("Go"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(dialog)
+                    self:openResult(result)
+                end,
+            },
+            {
+                text = _("Bookmark"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    local added, message = self:addBookmarkEntry(bookmark_url, title, _("Bookmark URL is missing."))
+                    if message and message ~= "" then
+                        UIManager:show(InfoMessage:new {
+                            text = message,
+                            timeout = 2,
+                        })
+                    end
+                    if added then
+                        UIManager:close(dialog)
+                    end
+                end,
+            },
+            {
+                text = _("Close"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(dialog)
+                end,
+            },
+        },
+        {
+            {
+                text = _("Save"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    local target_url = getTargetUrl()
+                    if not target_url then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Save URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    UIManager:close(dialog)
+                    NetworkMgr:runWhenOnline(function()
+                        self:saveExternalUrl(target_url, {
+                            title = title or normalized_url,
+                            source = "search",
+                            action = "save",
+                        })
+                    end)
+                end,
+            },
+            {
+                text = _("Markdown (native)"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    local target_url = getTargetUrl()
+                    if not target_url then
+                        UIManager:show(InfoMessage:new {
+                            text = _("Markdown URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    UIManager:close(dialog)
+                    NetworkMgr:runWhenOnline(function()
+                        self:downloadMarkdownAndOpen(target_url, title or normalized_url, false, {
+                            source = "search",
+                            action = "markdown",
+                        })
+                    end)
+                end,
+            },
+        },
+    }
+
+    if rssreader_available then
+        table.insert(buttons, {
+            {
+                text = _("Open sanitized"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    local target_url = getTargetUrl()
+                    if not target_url then
+                        UIManager:show(InfoMessage:new {
+                            text = _("URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    UIManager:close(dialog)
+                    rssreader_api.openSanitized(target_url, title or normalized_url, function(path, err)
+                        if err then
+                            UIManager:show(InfoMessage:new {
+                                text = string.format(_("Failed to open sanitized: %s"), err),
+                                timeout = 3,
+                            })
+                        end
+                    end)
+                end,
+            },
+            {
+                text = _("Save sanitized"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    local target_url = getTargetUrl()
+                    if not target_url then
+                        UIManager:show(InfoMessage:new {
+                            text = _("URL is missing."),
+                            timeout = 2,
+                        })
+                        return
+                    end
+
+                    UIManager:close(dialog)
+                    local save_dir = nil
+                    if CONFIG.save_to_directory and CONFIG.save_to_directory ~= "" then
+                        save_dir = CONFIG.save_to_directory
+                    else
+                        local home_dir = self:getHomeDirectory()
+                        if home_dir and home_dir ~= "" then
+                            save_dir = home_dir
+                        else
+                            local current_dir = self:getCurrentDirectory()
+                            if current_dir and current_dir ~= "" then
+                                save_dir = current_dir
+                            else
+                                save_dir = lfs.currentdir()
+                            end
+                        end
+                    end
+                    
+                    rssreader_api.saveSanitized(target_url, title or normalized_url, save_dir, function(path, err)
+                        if err then
+                            UIManager:show(InfoMessage:new {
+                                text = string.format(_("Failed to save sanitized: %s"), err),
+                                timeout = 3,
+                            })
+                        end
+                    end)
+                end,
+            },
+        })
+    end
+
     local dialog
     dialog = ButtonDialog:new {
         title = dialog_title,
         dismissable = true,
-        buttons = {
-            {
-                {
-                    text = _("Go"),
-                    background = Blitbuffer.COLOR_WHITE,
-                    callback = function()
-                        UIManager:close(dialog)
-                        self:openResult(result)
-                    end,
-                },
-                {
-                    text = _("Bookmark"),
-                    background = Blitbuffer.COLOR_WHITE,
-                    callback = function()
-                        local added, message = self:addBookmarkEntry(bookmark_url, title, _("Bookmark URL is missing."))
-                        if message and message ~= "" then
-                            UIManager:show(InfoMessage:new {
-                                text = message,
-                                timeout = 2,
-                            })
-                        end
-                        if added then
-                            UIManager:close(dialog)
-                        end
-                    end,
-                },
-                {
-                    text = _("Close"),
-                    background = Blitbuffer.COLOR_WHITE,
-                    callback = function()
-                        UIManager:close(dialog)
-                    end,
-                },
-            },
-            {
-                {
-                    text = _("Save"),
-                    background = Blitbuffer.COLOR_WHITE,
-                    callback = function()
-                        local target_url = getTargetUrl()
-                        if not target_url then
-                            UIManager:show(InfoMessage:new {
-                                text = _("Save URL is missing."),
-                                timeout = 2,
-                            })
-                            return
-                        end
-
-                        UIManager:close(dialog)
-                        NetworkMgr:runWhenOnline(function()
-                            self:saveExternalUrl(target_url, {
-                                title = title or normalized_url,
-                                source = "search",
-                                action = "save",
-                            })
-                        end)
-                    end,
-                },
-                {
-                    text = _("Markdown (native)"),
-                    background = Blitbuffer.COLOR_WHITE,
-                    callback = function()
-                        local target_url = getTargetUrl()
-                        if not target_url then
-                            UIManager:show(InfoMessage:new {
-                                text = _("Markdown URL is missing."),
-                                timeout = 2,
-                            })
-                            return
-                        end
-
-                        UIManager:close(dialog)
-                        NetworkMgr:runWhenOnline(function()
-                            self:downloadMarkdownAndOpen(target_url, title or normalized_url, false, {
-                                source = "search",
-                                action = "markdown",
-                            })
-                        end)
-                    end,
-                },
-            },
-        },
+        buttons = buttons,
     }
 
     if #info_entries > 0 then
