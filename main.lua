@@ -880,6 +880,17 @@ function WebBrowser:getCacheDirectory()
     return DataStorage:getDataDir() .. "/cache/webbrowser"
 end
 
+function WebBrowser:isCustomCacheDirectory()
+    local custom_dir = CONFIG.cache_directory
+    if type(custom_dir) == "string" then
+        local trimmed = trim_text(custom_dir)
+        if trimmed ~= "" then
+            return true
+        end
+    end
+    return false
+end
+
 function WebBrowser:getMuPDFRenderer()
     if not self.mupdf_renderer then
         self.mupdf_renderer = MuPDFRenderer:new {
@@ -2421,7 +2432,7 @@ function WebBrowser:showSearchDialog()
                     text = _("Clear cache"),
                     background = Blitbuffer.COLOR_WHITE,
                     enabled_func = function()
-                        return (self:isMuPDFRender() or self:isCreRender()) and self:shouldKeepOldWebsiteFiles()
+                        return (self:isMuPDFRender() or self:isCreRender()) and self:shouldKeepOldWebsiteFiles() and not self:isCustomCacheDirectory()
                     end,
                     callback = function()
                         self:clearMuPDFCache()

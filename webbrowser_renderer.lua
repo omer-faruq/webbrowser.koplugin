@@ -87,6 +87,58 @@ local function dirname(path)
     return dir or ""
 end
 
+local function isSafeCacheDirectory(path)
+    if not path or path == "" then
+        return false
+    end
+    
+    local normalized = path:gsub("\\", "/"):gsub("//+", "/")
+    normalized = normalized:gsub("/$", "")
+    
+    local dangerous_paths = {
+        "/",
+        "/mnt",
+        "/mnt/onboard",
+        "/mnt/sd",
+        "/mnt/us",
+        "/mnt/us/documents",
+        "/home",
+        "/root",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/etc",
+        "/var",
+        "/lib",
+        "/opt",
+        "/boot",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/tmp",
+        "C:",
+        "C:/",
+        "D:",
+        "D:/",
+    }
+    
+    for _, dangerous in ipairs(dangerous_paths) do
+        local normalized_dangerous = dangerous:gsub("\\", "/"):gsub("//+", "/"):gsub("/$", "")
+        if normalized:lower() == normalized_dangerous:lower() then
+            return false
+        end
+    end
+    
+    local default_cache = DataStorage:getDataDir() .. "/cache/webbrowser"
+    local normalized_default = default_cache:gsub("\\", "/"):gsub("//+", "/"):gsub("/$", "")
+    
+    if normalized:lower() == normalized_default:lower() then
+        return true
+    end
+    
+    return false
+end
+
 local function writeFile(path, data)
     local file, err = io.open(path, "wb")
     if not file then
@@ -457,6 +509,10 @@ function MuPDFRenderer:clearBaseDirectory(force)
 end
 
 function MuPDFRenderer:forceClearCache()
+    if not isSafeCacheDirectory(self.base_dir) then
+        return false, "Cannot clear cache: custom cache directory is not safe to clear automatically. Please clear it manually if needed."
+    end
+    
     local cleared, err = self:clearBaseDirectory(true)
     if not cleared then
         return false, err
