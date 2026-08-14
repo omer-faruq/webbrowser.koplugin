@@ -174,6 +174,9 @@ return {
     keep_old_website_files = true, -- for mupdf and cre render types.
     download_images = false, --for mupdf and cre  render types.
     use_stylesheets = false, --for mupdf and cre render_types: using stylesheets sometimes results in unreadable text.
+    search_highlighted_text = false, -- true adds a "Web Search" button to the text selection popup in the reader:
+                                     -- tap searches the highlighted text with the selected engine,
+                                     -- hold opens the search dialog prefilled with it so you can edit the query.
     search_history_limit = 10, -- maximum number of saved search history entries
     website_history_limit = 50, -- maximum number of saved website history entries, nil or 0 to disable.
     duplicate_entry_on_website_history = true, -- record duplicate visits to the same URL when true, false will only record the latest visit.

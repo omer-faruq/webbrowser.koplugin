@@ -75,6 +75,7 @@ local DEFAULT_HISTORY_LIMIT = 10
 local DEFAULT_WEBSITE_HISTORY_LIMIT = 50
 local DEFAULT_TIMEOUT = 15
 local DEFAULT_MAXTIME = 30
+local HIGHLIGHT_QUERY_MAX_LENGTH = 300
 
 local WebBrowser = WidgetContainer:extend{
     name = "webbrowser",
@@ -272,6 +273,20 @@ function WebBrowser:shouldAllowDuplicateWebsiteHistory()
         end
     end
     return true
+end
+
+function WebBrowser:isHighlightSearchEnabled()
+    local value = CONFIG.search_highlighted_text
+    if type(value) == "boolean" then
+        return value
+    end
+    if type(value) == "string" then
+        local normalized = value:lower()
+        if normalized == "true" or normalized == "1" or normalized == "yes" then
+            return true
+        end
+    end
+    return false
 end
 
 function WebBrowser:getWebsiteHistoryStore()
@@ -1470,6 +1485,9 @@ function WebBrowser:init()
     self.website_history_dialog = nil
     self.website_history_filter_text = nil
     self:loadSettings()
+    if self.ui.document and self.ui.highlight and self:isHighlightSearchEnabled() then
+        self:addToHighlightDialog()
+    end
     self.mupdf_renderer = nil
     self.mu_pdf_link_handler_registered = false
     if self:isMuPDFRender() or self:isCreRender() then
@@ -1929,6 +1947,69 @@ function WebBrowser:onShowWebBrowser()
     self:showSearchDialog()
 end
 
+-- Turns the current text selection into a search query: cleans it up, collapses
+-- line breaks and keeps it short enough for the search APIs.
+function WebBrowser:getHighlightQuery(reader_highlight)
+    local selected_text = reader_highlight and reader_highlight.selected_text
+    local text = selected_text and selected_text.text
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    text = trim_text(util.cleanupSelectedText(text):gsub("%s+", " "))
+    if text == "" then
+        return nil
+    end
+
+    if #text > HIGHLIGHT_QUERY_MAX_LENGTH then
+        text = text:sub(1, HIGHLIGHT_QUERY_MAX_LENGTH)
+        local truncated_at_space = text:match("^(.*)%s%S*$")
+        if truncated_at_space and truncated_at_space ~= "" then
+            text = truncated_at_space
+        else
+            -- do not leave a cut UTF-8 sequence behind
+            while #text > 0 and text:byte(#text) >= 0x80 and text:byte(#text) <= 0xBF do
+                text = text:sub(1, #text - 1)
+            end
+        end
+        text = trim_text(text)
+    end
+
+    if text == "" then
+        return nil
+    end
+    return text
+end
+
+-- '12_search' is the last core button, '12_1_' keeps ours right before it.
+function WebBrowser:addToHighlightDialog()
+    self.ui.highlight:addToHighlightDialog("12_1_webbrowser_search", function(reader_highlight)
+        return {
+            text = _("Web Search"),
+            callback = function()
+                local query = self:getHighlightQuery(reader_highlight)
+                reader_highlight:onClose()
+                if not query then
+                    UIManager:show(InfoMessage:new {
+                        text = _("No text selected."),
+                        timeout = 2,
+                    })
+                    return
+                end
+                NetworkMgr:runWhenOnline(function()
+                    self:performSearch(query)
+                end)
+            end,
+            hold_callback = function()
+                -- hold to review or edit the selection before searching
+                local query = self:getHighlightQuery(reader_highlight)
+                reader_highlight:onClose()
+                self:showSearchDialog(query)
+            end,
+        }
+    end)
+end
+
 function WebBrowser:showEngineSettings()
     if CONFIG_MISSING then
         return
@@ -2341,7 +2422,7 @@ function WebBrowser:showLanguageSettings()
     settings_dialog:onShowKeyboard()
 end
 
-function WebBrowser:showSearchDialog()
+function WebBrowser:showSearchDialog(initial_input)
     if CONFIG_MISSING then
         UIManager:show(InfoMessage:new {
             text = _("Web browser configuration file not found. Copy 'webbrowser_configuration.sample.lua' to 'webbrowser_configuration.lua' inside the webbrowser plugin folder."),
@@ -2358,7 +2439,7 @@ function WebBrowser:showSearchDialog()
 
     self.search_dialog = InputDialog:new {
         title = string.format(_("%s Search"), engine_display),
-        input = "",
+        input = type(initial_input) == "string" and initial_input or "",
         input_hint = _("Enter keywords or URL"),
         title_bar_left_icon = "appbar.settings",
         title_bar_left_icon_tap_callback = function()

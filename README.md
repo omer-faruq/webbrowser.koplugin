@@ -12,6 +12,7 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
   - **Graceful fallback**: If RSS Reader is not installed, these buttons are hidden and the Web Browser functions normally.
 - **Flexible rendering modes**: Switch between Markdown, CRE, and MuPDF to match your preferred balance of readability and page fidelity.
 - **Direct URL navigation**: Use the Go button in the search dialog to open any URL without performing a search first.
+- **Search highlighted text** (optional): Set `search_highlighted_text = true` in `webbrowser_configuration.lua` to add a **Web Search** button next to Search and Wikipedia in the text selection popup. Tapping it searches the selected word or passage right away; holding it opens the search dialog prefilled with the selection so you can refine the query. Disabled by default.
 - **Expanded format support**: Follow links to EPUB, PDF, DJVU, CBZ, and other KOReader-supported documents directly from the results screen and continue reading in the appropriate viewer.
 - **Bookmark manager**: Store, organize, reopen, and delete frequently referenced pages inside KOReader.
 - **Offline-ready saves**: Export rendered Markdown to local storage for later reading without connectivity, or tap **Save** in the link popup to archive the currently highlighted page without opening it first.
