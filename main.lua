@@ -59,6 +59,7 @@ local SearchEngines = {
     google_api = require("webbrowser_google_api"),
     tavily_api = require("webbrowser_tavily_api"),
     exa_api = require("webbrowser_exa_api"),
+    kiwix = require("webbrowser_kiwix"),
 }
 
 local GOOGLE_DEFAULT_BATCH_SIZE = 10
@@ -69,6 +70,8 @@ local TAVILY_DEFAULT_BATCH_SIZE = 10
 local TAVILY_API_MAX_TOTAL = 20
 local EXA_DEFAULT_BATCH_SIZE = 10
 local EXA_API_MAX_TOTAL = 100
+local KIWIX_DEFAULT_BATCH_SIZE = 25
+local KIWIX_MAX_PAGE_LENGTH = 140 -- kiwix-serve refuses anything larger
 
 local DEFAULT_SEARCH_ENGINE = "duckduckgo"
 local DEFAULT_HISTORY_LIMIT = 10
@@ -884,6 +887,13 @@ function WebBrowser:isCreRender()
     return self:getRenderType() == "cre"
 end
 
+-- The Markdown renderer converts pages through an online gateway, which by
+-- definition cannot reach a server running on this device. Pages from a local
+-- source (kiwix-serve) therefore go through the HTML renderer instead.
+function WebBrowser:shouldFallBackToCre(url)
+    return self:isMarkdownRender() and Utils.is_loopback_url(url)
+end
+
 function WebBrowser:getCacheDirectory()
     local custom_dir = CONFIG.cache_directory
     if type(custom_dir) == "string" then
@@ -993,7 +1003,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
                     if type(target_url) ~= "string" or not target_url:match("^https?://") then
                         return
                     end
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(target_url, function()
                         self:recordWebsiteVisit(target_url, link_url, {
                             source = "document",
                             action = "open",
@@ -1017,7 +1027,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
                     if type(target_url) ~= "string" or not target_url:match("^https?://") then
                         return
                     end
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(target_url, function()
                         self:recordWebsiteVisit(target_url, link_url, {
                             source = "document",
                             action = "open",
@@ -1041,7 +1051,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
                 })
                 return
             end
-            NetworkMgr:runWhenOnline(function()
+            self:runWhenReachable(target_url, function()
                 self:downloadMarkdownAndOpen(target_url, link_url, false, {
             source = "document",
             action = "markdown",
@@ -1101,7 +1111,7 @@ function WebBrowser:ensureMuPDFLinkHandler()
                 })
                 return
             end
-            NetworkMgr:runWhenOnline(function()
+            self:runWhenReachable(target_url, function()
                 self:saveExternalUrl(target_url, {
                     title = link_url,
                     source = "document",
@@ -1283,7 +1293,7 @@ function WebBrowser:openDirectUrl(raw_input)
         return
     end
 
-    NetworkMgr:runWhenOnline(function()
+    self:runWhenReachable(normalized, function()
         self:recordWebsiteVisit(normalized, normalized, {
             source = "direct",
             action = "open",
@@ -1293,7 +1303,7 @@ function WebBrowser:openDirectUrl(raw_input)
             return
         end
 
-        if self:isCreRender() then
+        if self:isCreRender() or self:shouldFallBackToCre(normalized) then
             self:loadCreUrl(normalized, false, _("Loading page…"))
             return
         end
@@ -1412,6 +1422,28 @@ function WebBrowser:getSearchEngineModule()
     local engine_type = (config.name and config.name:lower()) or self:extractEngineTypeFromProfileKey(profile_key) or DEFAULT_SEARCH_ENGINE
     local engine = SearchEngines[engine_type] or SearchEngines[DEFAULT_SEARCH_ENGINE]
     return engine, config, engine_type
+end
+
+-- True when the given URL is served by this very device, so it stays reachable
+-- with Wi-Fi off. When no URL is given, the selected search engine's endpoint
+-- decides -- that is how a kiwix-serve profile stays usable while offline.
+function WebBrowser:isLocalTarget(url)
+    if type(url) == "string" and url ~= "" then
+        return Utils.is_loopback_url(url)
+    end
+
+    local config = self:getSearchEngineConfig()
+    return config ~= nil and Utils.is_loopback_url(config.base_url)
+end
+
+-- Drop-in replacement for NetworkMgr:runWhenOnline that does not nag for Wi-Fi
+-- when the target is local. Pass the target URL when one is known, or nil to
+-- let the selected engine decide.
+function WebBrowser:runWhenReachable(url, action)
+    if self:isLocalTarget(url) then
+        return action()
+    end
+    return NetworkMgr:runWhenOnline(action)
 end
 
 function WebBrowser:getSearchEngineDisplayName()
@@ -1608,6 +1640,19 @@ function WebBrowser:loadSettings()
                 if saved_user_location and saved_user_location ~= "" then
                     engine_config.user_location = saved_user_location
                 end
+
+                if engine_config.name == "kiwix" then
+                    local saved_base_url = self.settings:readSetting(engine_name .. "_base_url")
+                    if saved_base_url and saved_base_url ~= "" then
+                        engine_config.base_url = saved_base_url
+                    end
+
+                    -- "" was stored deliberately and means "search every archive"
+                    local saved_book_name = self.settings:readSetting(engine_name .. "_book_name")
+                    if saved_book_name then
+                        engine_config.book_name = saved_book_name ~= "" and saved_book_name or nil
+                    end
+                end
             end
         end
     end
@@ -1648,6 +1693,16 @@ function WebBrowser:saveSettings(specific_engine)
                 if engine_config.user_location then
                     self.settings:saveSetting(specific_engine .. "_user_location", engine_config.user_location)
                 end
+                -- Only kiwix exposes these in the UI. Persisting them for the
+                -- other engines would let a stale value shadow config.lua.
+                if engine_config.name == "kiwix" then
+                    if engine_config.base_url then
+                        self.settings:saveSetting(specific_engine .. "_base_url", engine_config.base_url)
+                    end
+                    -- an empty archive name is a real choice ("search all"),
+                    -- so it has to be written out rather than skipped
+                    self.settings:saveSetting(specific_engine .. "_book_name", engine_config.book_name or "")
+                end
             end
         else
             for engine_name, engine_config in pairs(engines) do
@@ -1671,6 +1726,12 @@ function WebBrowser:saveSettings(specific_engine)
                 end
                 if engine_config.user_location then
                     self.settings:saveSetting(engine_name .. "_user_location", engine_config.user_location)
+                end
+                if engine_config.name == "kiwix" then
+                    if engine_config.base_url then
+                        self.settings:saveSetting(engine_name .. "_base_url", engine_config.base_url)
+                    end
+                    self.settings:saveSetting(engine_name .. "_book_name", engine_config.book_name or "")
                 end
             end
         end
@@ -1996,7 +2057,7 @@ function WebBrowser:addToHighlightDialog()
                     })
                     return
                 end
-                NetworkMgr:runWhenOnline(function()
+                self:runWhenReachable(nil, function()
                     self:performSearch(query)
                 end)
             end,
@@ -2052,6 +2113,17 @@ function WebBrowser:showEngineSettings()
                 callback = function()
                     UIManager:close(engine_settings_dialog)
                     self:showExaSettings()
+                end,
+            },
+        })
+    elseif engine_type == "kiwix" then
+        table.insert(buttons, {
+            {
+                text = _("Configure Settings"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    UIManager:close(engine_settings_dialog)
+                    self:showKiwixSettings()
                 end,
             },
         })
@@ -2115,7 +2187,7 @@ function WebBrowser:showEngineSelector()
         local type_a = self:extractEngineTypeFromProfileKey(a.key) or ""
         local type_b = self:extractEngineTypeFromProfileKey(b.key) or ""
         if type_a ~= type_b then
-            local order = {duckduckgo = 1, brave_api = 2, tavily_api = 3, exa_api = 4, google_api = 5}
+            local order = {duckduckgo = 1, brave_api = 2, tavily_api = 3, exa_api = 4, google_api = 5, kiwix = 6}
             return (order[type_a] or 99) < (order[type_b] or 99)
         end
         return a.key < b.key
@@ -2158,6 +2230,73 @@ function WebBrowser:showEngineSelector()
         buttons = buttons,
     }
     UIManager:show(self.engine_selector_dialog)
+end
+
+function WebBrowser:showKiwixSettings()
+    if CONFIG_MISSING then
+        return
+    end
+
+    local config, engine_name = self:getSearchEngineConfig()
+    if not config then
+        return
+    end
+
+    local fields = {
+        {
+            text = config.base_url or "http://localhost:8888",
+            hint = _("Server address (e.g. http://localhost:8888)"),
+            input_type = "string",
+        },
+        {
+            text = config.book_name or "",
+            hint = _("Archive name, without .zim (empty = search all)"),
+            input_type = "string",
+        },
+    }
+
+    local settings_dialog
+    settings_dialog = MultiInputDialog:new {
+        title = _("Kiwix Settings"),
+        fields = fields,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    callback = function()
+                        UIManager:close(settings_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    is_enter_default = true,
+                    callback = function()
+                        local values = settings_dialog:getFields()
+
+                        local new_base_url = trim_text(values[1] or "")
+                        if new_base_url ~= "" then
+                            config.base_url = new_base_url
+                        end
+
+                        -- an empty archive name means "search the whole library"
+                        local new_book = trim_text(values[2] or ""):gsub("%.zim$", "")
+                        config.book_name = new_book ~= "" and new_book or nil
+
+                        self:saveSettings(engine_name)
+                        UIManager:close(settings_dialog)
+                        UIManager:show(InfoMessage:new {
+                            text = _("Settings saved successfully"),
+                            timeout = 2,
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(settings_dialog)
+    settings_dialog:onShowKeyboard()
 end
 
 function WebBrowser:showTavilySettings()
@@ -2472,7 +2611,7 @@ function WebBrowser:showSearchDialog(initial_input)
                         end
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
-                        NetworkMgr:runWhenOnline(function()
+                        self:runWhenReachable(nil, function()
                             self:performSearch(query)
                         end)
                     end,
@@ -2493,7 +2632,7 @@ function WebBrowser:showSearchDialog(initial_input)
 
                         UIManager:close(self.search_dialog)
                         self.search_dialog = nil
-                        NetworkMgr:runWhenOnline(function()
+                        self:runWhenReachable(url_input, function()
                             self:openDirectUrl(url_input)
                         end)
                     end,
@@ -2611,6 +2750,7 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
     if resolved_engine_name == "google_api" and stored_engine_config then
         self:prepareGooglePaging(query, results, stored_engine_config)
         self.brave_results_paging = nil
+        self.kiwix_results_paging = nil
         load_more_options = {
             text = _("Load more"),
             enabled = self:canLoadMoreGoogleResults(),
@@ -2621,6 +2761,7 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
     elseif resolved_engine_name == "brave_api" and stored_engine_config then
         self:prepareBravePaging(query, results, stored_engine_config)
         self.google_results_paging = nil
+        self.kiwix_results_paging = nil
         load_more_options = {
             text = _("Load more"),
             enabled = self:canLoadMoreBraveResults(),
@@ -2628,9 +2769,21 @@ function WebBrowser:showResultsMenu(query, results, engine_display, engine_name,
                 self:onResultsMenuLoadMore()
             end,
         }
+    elseif resolved_engine_name == "kiwix" and stored_engine_config then
+        self:prepareKiwixPaging(query, results, stored_engine_config)
+        self.google_results_paging = nil
+        self.brave_results_paging = nil
+        load_more_options = {
+            text = _("Load more"),
+            enabled = self:canLoadMoreKiwixResults(),
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        }
     else
         self.google_results_paging = nil
         self.brave_results_paging = nil
+        self.kiwix_results_paging = nil
     end
 
     local item_table = {}
@@ -2671,7 +2824,10 @@ function WebBrowser:buildResultMenuEntry(result, engine_name)
     end
 
     local sub_text = result.snippet
-    if engine_name == "brave_api" and result.domain and result.domain ~= "" then
+    -- for kiwix, `domain` carries the archive title, which matters when several
+    -- archives are served at once
+    if (engine_name == "brave_api" or engine_name == "kiwix")
+        and result.domain and result.domain ~= "" then
         if sub_text and sub_text ~= "" then
             sub_text = string.format("%s\n%s", result.domain, sub_text)
         else
@@ -2842,6 +2998,152 @@ end
 function WebBrowser:canLoadMoreBraveResults()
     local state = self.brave_results_paging
     return state and state.has_more or false
+end
+
+function WebBrowser:getKiwixBatchSize(config)
+    local size = tonumber(config and config.max_results)
+    if not size or size < 1 then
+        size = KIWIX_DEFAULT_BATCH_SIZE
+    end
+    if size > KIWIX_MAX_PAGE_LENGTH then
+        size = KIWIX_MAX_PAGE_LENGTH
+    end
+    return math.floor(size)
+end
+
+function WebBrowser:prepareKiwixPaging(query, results, config)
+    local effective_config = config or {}
+    local batch_size = self:getKiwixBatchSize(effective_config)
+    local metadata = type(results) == "table" and results._metadata
+
+    -- kiwix-serve echoes the offset it actually used, which is more reliable
+    -- than whatever we asked for
+    local start_index = (metadata and tonumber(metadata.start_index))
+        or tonumber(effective_config.start_index) or 0
+    local next_start = start_index + #results
+
+    -- the feed reports the full hit count, so "is there more" is exact here
+    local total = metadata and tonumber(metadata.total_results)
+    local has_more
+    if total then
+        has_more = next_start < total
+    else
+        has_more = #results >= batch_size
+    end
+
+    self.kiwix_results_paging = {
+        query = query,
+        base_config = util.tableDeepCopy(effective_config),
+        batch_size = batch_size,
+        next_start = next_start,
+        total_results = total,
+        has_more = has_more,
+        history_entry_id = self.last_history_entry_id,
+    }
+end
+
+function WebBrowser:canLoadMoreKiwixResults()
+    local state = self.kiwix_results_paging
+    return state and state.has_more or false
+end
+
+function WebBrowser:fetchMoreKiwixResults(state)
+    if not state then
+        return
+    end
+    local menu = self.results_menu
+    if not menu then
+        return
+    end
+
+    local engine = SearchEngines.kiwix
+    if not engine then
+        return
+    end
+
+    local function stop(message)
+        state.has_more = false
+        self:updateResultsMenuLoadMore(menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+        if message then
+            UIManager:show(InfoMessage:new {
+                text = message,
+                timeout = 3,
+            })
+        end
+    end
+
+    local request_config = util.tableDeepCopy(state.base_config or {})
+    request_config.start_index = state.next_start
+    request_config.max_results = state.batch_size
+
+    local info = InfoMessage:new {
+        text = _("Loading more results…"),
+        timeout = 0,
+    }
+    UIManager:show(info)
+
+    local results, err = engine.search(state.query, request_config)
+    UIManager:close(info)
+
+    if not results then
+        stop(err or _("Failed to load more results."))
+        return
+    end
+
+    local received_count = #results
+    if received_count == 0 then
+        stop(_("No more results found."))
+        return
+    end
+
+    if not self.last_results or self.last_results.engine_name ~= "kiwix" then
+        stop(nil)
+        return
+    end
+
+    for _, result in ipairs(results) do
+        table.insert(self.last_results.items, result)
+        table.insert(menu.item_table, self:buildResultMenuEntry(result, self.last_results.engine_name))
+    end
+
+    menu:updateItems()
+
+    state.next_start = state.next_start + received_count
+
+    local metadata = type(results) == "table" and results._metadata
+    local total = (metadata and tonumber(metadata.total_results)) or state.total_results
+    if total then
+        state.total_results = total
+        state.has_more = state.next_start < total
+    else
+        state.has_more = received_count >= state.batch_size
+    end
+
+    self:updateResultsMenuLoadMore(menu, {
+        text = _("Load more"),
+        enabled = state.has_more,
+        callback = function()
+            self:onResultsMenuLoadMore()
+        end,
+    })
+
+    if state.history_entry_id then
+        local store = self:getSearchHistoryStore()
+        if store then
+            local ok, append_err = pcall(function()
+                store:appendResults(state.history_entry_id, results)
+            end)
+            if not ok and append_err then
+                logger.warn("webbrowser", "failed to append search history results", append_err)
+            end
+        end
+    end
 end
 
 function WebBrowser:fetchMoreGoogleResults(state)
@@ -3119,7 +3421,7 @@ function WebBrowser:onResultsMenuLoadMore()
             end,
         })
 
-        NetworkMgr:runWhenOnline(function()
+        self:runWhenReachable(nil, function()
             self:fetchMoreGoogleResults(state)
         end)
         return
@@ -3150,8 +3452,39 @@ function WebBrowser:onResultsMenuLoadMore()
             end,
         })
 
-        NetworkMgr:runWhenOnline(function()
+        self:runWhenReachable(nil, function()
             self:fetchMoreBraveResults(state)
+        end)
+        return
+    end
+
+    if last_engine == "kiwix" then
+        local state = self.kiwix_results_paging
+        if not state then
+            return
+        end
+
+        if not self:canLoadMoreKiwixResults() then
+            self:updateResultsMenuLoadMore(self.results_menu, {
+                text = _("Load more"),
+                enabled = false,
+                callback = function()
+                    self:onResultsMenuLoadMore()
+                end,
+            })
+            return
+        end
+
+        self:updateResultsMenuLoadMore(self.results_menu, {
+            text = _("Load more"),
+            enabled = false,
+            callback = function()
+                self:onResultsMenuLoadMore()
+            end,
+        })
+
+        self:runWhenReachable(nil, function()
+            self:fetchMoreKiwixResults(state)
         end)
     end
 end
@@ -3266,7 +3599,7 @@ function WebBrowser:showResultActions(result)
                     end
 
                     UIManager:close(dialog)
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(target_url, function()
                         self:saveExternalUrl(target_url, {
                             title = title or normalized_url,
                             source = "search",
@@ -3289,7 +3622,7 @@ function WebBrowser:showResultActions(result)
                     end
 
                     UIManager:close(dialog)
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(target_url, function()
                         self:downloadMarkdownAndOpen(target_url, title or normalized_url, false, {
                             source = "search",
                             action = "markdown",
@@ -3433,7 +3766,8 @@ function WebBrowser:openResultCre(result)
 end
 
 function WebBrowser:openResult(result)
-    NetworkMgr:runWhenOnline(function()
+    local result_url = result and (result.url or result.gateway_url or result.source_url)
+    self:runWhenReachable(Utils.decode_result_url(result_url) or result_url, function()
         if self.results_menu then
             UIManager:close(self.results_menu)
             self.results_menu = nil
@@ -3449,7 +3783,7 @@ function WebBrowser:openResult(result)
             return
         end
 
-        if self:isCreRender() then
+        if self:isCreRender() or self:shouldFallBackToCre(recorded_url) then
             self:openResultCre(result)
             return
         end
@@ -3574,7 +3908,7 @@ function WebBrowser:onLinkTapped(link)
         action = "markdown_link",
     })
 
-    NetworkMgr:runWhenOnline(function()
+    self:runWhenReachable(absolute, function()
         local content, err = fetch_markdown(gateway_url)
         if not content then
             self:handleFetchError(err, false)
@@ -3937,14 +4271,14 @@ function WebBrowser:openBookmarkEntry(entry, bookmarks, store)
 
     local direct_url = Utils.decode_result_url(url) or url
 
-    NetworkMgr:runWhenOnline(function()
+    self:runWhenReachable(direct_url, function()
         if self:isMuPDFRender() then
             self:recordWebsiteVisit(direct_url, title, { source = "bookmarks", action = "open" })
             self:loadMuPDFUrl(direct_url, false, _("Loading bookmark…"))
             return
         end
 
-        if self:isCreRender() then
+        if self:isCreRender() or self:shouldFallBackToCre(direct_url) then
             self:recordWebsiteVisit(direct_url, title, { source = "bookmarks", action = "open" })
             self:loadCreUrl(direct_url, false, _("Loading bookmark…"))
             return
@@ -4167,7 +4501,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
 
                     UIManager:close(dialog)
                     clearDialog()
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(target_url, function()
                         self:downloadMarkdownAndOpen(target_url, selected.title, false, {
                             source = "bookmarks",
                             action = "markdown",
@@ -4444,7 +4778,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
                     end
                     dialog:onClose()
                     clearDialog()
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(selected_entry and selected_entry.url, function()
                         self:openWebsiteHistoryEntry(selected_entry)
                     end)
                 end,
@@ -4532,7 +4866,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
                     end
                     UIManager:close(dialog)
                     clearDialog()
-                    NetworkMgr:runWhenOnline(function()
+                    self:runWhenReachable(target_url, function()
                         self:downloadMarkdownAndOpen(target_url, selected_entry.title or target_url, false, {
                             source = "history",
                             action = "markdown",

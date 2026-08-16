@@ -23,7 +23,68 @@ Experience distraction-free browsing on e-ink devices with a KOReader-native wor
 - **Brave Search API** (`https://api.search.brave.com/res/v1/web/search`): Supplies JSON search results when the Brave API engine is enabled and now supports the in-app **Load more** button to fetch additional pages without losing the current list. **Recommended for sustained use.**
 - **Tavily Search API** (`https://api.tavily.com/search`): Provides LLM-optimized search results with advanced filtering options including search depth control, topic filtering, and country boosting. **Recommended for high-quality, AI-ready search results.**
 - **Exa Search API** (`https://api.exa.ai/search`): Delivers embeddings-based neural search with multiple search types (neural, fast, auto, deep variants, instant) and category filtering (company, research paper, news, people, etc.). Supports up to 100 results per query with flexible search algorithms.
+- **Kiwix (offline)** (`http://localhost:8888` by default): Searches `.zim` archives served by a local [kiwix-serve](https://kiwix-tools.readthedocs.io/en/latest/kiwix-serve.html) instance. No internet involved — see [Offline search with Kiwix](#offline-search-with-kiwix).
 - **Google Custom Search API** (`https://customsearch.googleapis.com/customsearch/v1`): ⚠️ **DEPRECATED** - Google has discontinued the "entire web" search feature. Existing users can continue until January 2027, but new users cannot create search engines that cover the entire web. See [deprecation notice](https://support.google.com/programmable-search/answer/12397162). **Please migrate to Brave API or DuckDuckGo.**
+
+## Offline search with Kiwix
+
+Wikipedia and friends can be searched and read with **Wi-Fi switched off**, by pointing the
+plugin at a [kiwix-serve](https://kiwix-tools.readthedocs.io/en/latest/kiwix-serve.html)
+instance holding `.zim` archives. Whenever the configured address is on this device, the
+plugin skips KOReader's "turn Wi-Fi on?" prompt entirely, so lookups cost no radio power.
+
+### 1. Get an archive
+
+Archives live at [download.kiwix.org/zim/](https://download.kiwix.org/zim/) — Wikipedia,
+Wiktionary, Stack Exchange, Project Gutenberg, DevDocs and more. Pick a subject-specific
+build rather than the full dump; the naming suffix tells you how heavy it is:
+
+| Suffix | Contents | Typical size (English, one subject) |
+| --- | --- | --- |
+| `_mini` | Lead paragraph only | 5–55 MB |
+| `_nopic` | Full text, no images | 10–60 MB |
+| `_maxi` | Everything | much larger |
+
+Good starting points: `wikipedia_en_100_mini_2026-07.zim` (4.4 MB, the 100 most-read
+articles) to try things out, or `wikipedia_en_climate-change_mini_2026-07.zim` (12 MB) for
+something with real full-text search in it. `_nopic` is usually the best fit for an
+e-reader in daily use.
+
+### 2. Run the server
+
+```sh
+kiwix-serve --port=8888 wikipedia_en_100_mini_2026-07.zim
+```
+
+`kiwix-serve` ships with [kiwix-tools](https://download.kiwix.org/release/kiwix-tools/),
+which has builds for Windows, Linux, macOS and ARM. Run it **on the e-reader** for a fully
+offline setup, or on another machine on your network — that works too, but then Wi-Fi is
+still needed and the power saving is lost.
+
+### 3. Configure the plugin
+
+Set `visible = true` on the `kiwix` profile in your configuration file, adjust `base_url`
+if you changed the port, then pick **Kiwix (offline)** in
+Tools → Web Browser → Settings → Select Search Engine. The address and archive can also be
+changed at runtime from **Configure Settings**.
+
+`book_name` must be the **file name kiwix-serve was started with**, without `.zim` — not
+the name stored inside the archive. Getting it wrong makes the server reply `HTTP 400`; the
+plugin notices and falls back to searching every loaded archive. Leaving it empty selects
+that whole-library behaviour on purpose.
+
+**Load more** works as it does for the other engines: `kiwix-serve` reports the full hit
+count, so the button stays active until every match has been listed, `max_results` at a
+time (the server refuses batches larger than 140).
+
+### Limitations
+
+- `render_type = "markdown"` cannot be used for local pages: it converts them through the
+  online Jina AI gateway, which by definition cannot reach a server on your own device. You
+  do not have to change the setting — local pages are quietly handed to the `cre` renderer
+  instead, and remote pages keep using Markdown as before.
+- Full-text search quality is whatever the archive was built with; `_mini` archives only
+  index lead paragraphs.
 
 ## Multiple Engine Profiles
 You can define multiple profiles for **any search engine type** with different API keys or settings.
