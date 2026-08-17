@@ -185,8 +185,35 @@ local function parse_results(xml_body, base_url, limit)
     return results
 end
 
--- Books are addressed by the *file name* kiwix-serve was started with, not by
--- the name stored inside the ZIM; getting this wrong returns HTTP 400.
+-- kiwix-serve keeps two disjoint ways of naming an archive:
+--   books.name        the file name the server was started with ("ray-charles")
+--   books.filter.name the name stored inside the archive, which is also what
+--                     the catalogue reports ("wikipedia_en_ray-charles")
+-- Passing a name to the wrong one is answered with HTTP 400, and both are
+-- plausible things for a user to have written down, so each is tried in turn.
+-- The parameter that worked is remembered, keyed by server and archive, so the
+-- extra request happens once rather than on every search.
+local BOOK_PARAMS = { "books.name", "books.filter.name" }
+local resolved_book_param = {}
+
+local function book_param_order(base_url, books)
+    local cached = resolved_book_param[base_url .. "\0" .. table.concat(books, "\0")]
+    if not cached then
+        return BOOK_PARAMS
+    end
+    local order = { cached }
+    for _, param in ipairs(BOOK_PARAMS) do
+        if param ~= cached then
+            table.insert(order, param)
+        end
+    end
+    return order
+end
+
+local function remember_book_param(base_url, books, param)
+    resolved_book_param[base_url .. "\0" .. table.concat(books, "\0")] = param
+end
+
 local function collect_books(settings)
     local books = {}
     if type(settings.books) == "table" then
@@ -202,7 +229,7 @@ local function collect_books(settings)
     return books
 end
 
-local function build_query_url(base_url, query, settings, books, start_index, page_length)
+local function build_query_url(base_url, query, settings, books, book_param, start_index, page_length)
     local parts = {
         "pattern=" .. socket_url.escape(query),
         "format=xml",
@@ -213,7 +240,7 @@ local function build_query_url(base_url, query, settings, books, start_index, pa
     for _, name in ipairs(books) do
         -- strip a trailing .zim: the server registers books without it
         local book = name:gsub("%.zim$", "")
-        table.insert(parts, "books.name=" .. socket_url.escape(book))
+        table.insert(parts, book_param .. "=" .. socket_url.escape(book))
     end
 
     if type(settings.filter_lang) == "string" and settings.filter_lang ~= "" then
@@ -240,16 +267,32 @@ function Kiwix.search(query, opts)
     end
 
     local books = collect_books(settings)
-    local url = build_query_url(base_url, query, settings, books, start_index, page_length)
+    local url, body, err, code, raw_body
 
-    local body, err, code, raw_body = fetch(url, settings.timeout, settings.maxtime)
+    if #books > 0 then
+        for _, param in ipairs(book_param_order(base_url, books)) do
+            url = build_query_url(base_url, query, settings, books, param, start_index, page_length)
+            body, err, code, raw_body = fetch(url, settings.timeout, settings.maxtime)
+            if body then
+                remember_book_param(base_url, books, param)
+                break
+            end
+            if code ~= 400 then
+                -- not a naming mismatch, so trying the other parameter is pointless
+                break
+            end
+        end
 
-    -- A wrong book name is the most common misconfiguration. Rather than
-    -- failing outright, fall back to searching the whole library.
-    if not body and code == 400 and #books > 0 then
-        logger.warn("webbrowser", "kiwix: unknown book name, retrying across the whole library",
-            extract_error_message(raw_body, err))
-        url = build_query_url(base_url, query, settings, {}, start_index, page_length)
+        -- The name matches neither scheme. Rather than failing outright, search
+        -- everything the server has loaded.
+        if not body and code == 400 then
+            logger.warn("webbrowser", "kiwix: unknown archive name, retrying across the whole library",
+                extract_error_message(raw_body, err))
+            url = build_query_url(base_url, query, settings, {}, BOOK_PARAMS[1], start_index, page_length)
+            body, err, code, raw_body = fetch(url, settings.timeout, settings.maxtime)
+        end
+    else
+        url = build_query_url(base_url, query, settings, {}, BOOK_PARAMS[1], start_index, page_length)
         body, err, code, raw_body = fetch(url, settings.timeout, settings.maxtime)
     end
 
@@ -265,6 +308,66 @@ function Kiwix.search(query, opts)
     end
 
     return parse_results(body, base_url, page_length)
+end
+
+-- Lists the archives a server has loaded, so they can be picked from a menu
+-- instead of typed from memory. `name` is the catalogue name, which search
+-- reaches through books.filter.name.
+function Kiwix.list_archives(opts)
+    local settings = opts or {}
+    local base_url = normalize_base_url(settings.base_url)
+
+    -- count=-1 asks for the whole catalogue rather than the first page
+    local url = base_url .. "/catalog/v2/entries?count=-1"
+    local body, err, code, raw_body = fetch(url, settings.timeout, settings.maxtime)
+
+    if not body then
+        if not code then
+            return nil, string.format(
+                "Could not reach kiwix-serve at %s. Is the server running?", base_url)
+        end
+        return nil, extract_error_message(raw_body, err) or "Could not read the archive list."
+    end
+
+    local handler = treehdl.simpleTreeHandler()
+    local ok, parse_err = pcall(function()
+        libxml.xmlParser(handler):parse(body)
+    end)
+    if not ok then
+        logger.warn("webbrowser", "kiwix: failed to parse catalogue", parse_err)
+        return nil, "Could not parse the archive list."
+    end
+
+    local feed = handler.root and handler.root.feed
+    if type(feed) ~= "table" then
+        return nil, "Unexpected catalogue response."
+    end
+
+    local archives = {}
+    for _, entry in ipairs(as_list(feed.entry)) do
+        if type(entry) == "table" then
+            -- entry.name is the archive; author/publisher carry their own
+            -- nested <name>, which stays out of the way under those keys
+            local name = node_text(entry.name)
+            if name ~= "" then
+                table.insert(archives, {
+                    name = name,
+                    title = node_text(entry.title),
+                    language = node_text(entry.language),
+                    flavour = node_text(entry.flavour),
+                    article_count = tonumber(node_text(entry.articleCount)),
+                })
+            end
+        end
+    end
+
+    table.sort(archives, function(a, b)
+        local left = (a.title ~= "" and a.title) or a.name
+        local right = (b.title ~= "" and b.title) or b.name
+        return left:lower() < right:lower()
+    end)
+
+    return archives
 end
 
 return Kiwix

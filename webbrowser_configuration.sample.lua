@@ -1,6 +1,6 @@
 return {
     -- Selected engine profile key (can be engine type like "brave_api" or custom profile like "brave_personal")
-    engine = "brave_api", -- options: "duckduckgo", "brave_api", "tavily_api", "exa_api", "google_api" (deprecated)
+    engine = "brave_api", -- options: "duckduckgo", "brave_api", "tavily_api", "exa_api", "kiwix" (offline), "google_api" (deprecated)
     -- RECOMMENDED: Use "brave_api" or "tavily_api" for best reliability and sustained use.
     -- Google API is deprecated for new users (existing users can use until January 2027).
     -- 
@@ -159,7 +159,8 @@ return {
         --   1. Grab an archive from https://download.kiwix.org/zim/
         --      (a tiny one to try it out: wikipedia_en_100_mini_2026-07.zim)
         --   2. kiwix-serve --port=8888 wikipedia_en_100_mini_2026-07.zim
-        --   3. Flip `visible` below to true and select "Kiwix (offline)".
+        --   3. Pick "Kiwix (offline)" in the engine selector, then choose an
+        --      archive from Settings -> Configure Settings -> Select Archive.
         --
         -- Works with any render_type. The "markdown" renderer goes through an
         -- online gateway that cannot reach your local server, so local pages
@@ -171,17 +172,20 @@ return {
             -- A server on another machine works too (http://192.168.1.20:8888),
             -- but then Wi-Fi is obviously still required.
             base_url = "http://localhost:8888",
-            -- Archive to search, WITHOUT the .zim extension. This is the file
-            -- name kiwix-serve was started with, NOT the name stored inside the
-            -- archive -- a mismatch makes the server answer HTTP 400, and the
-            -- plugin then falls back to searching everything.
+            -- Archive to search, WITHOUT the .zim extension. Both spellings the
+            -- server understands are accepted: the file name it was started
+            -- with ("wikipedia_en_100_mini_2026-07") or the name its catalogue
+            -- reports ("wikipedia_en_100"). If it matches neither, the plugin
+            -- falls back to searching everything.
             -- Leave nil to search every archive the server has loaded.
+            -- Easiest way to set this: Settings -> Configure Settings ->
+            -- Select Archive, which lists what the server actually has.
             book_name = nil,
             -- Optional: restrict to archives in one language (ISO 639-3),
             -- e.g. "tur", "eng". Only useful when serving several archives.
             filter_lang = nil,
             max_results = 25, -- kiwix-serve caps this at 140
-            visible = false,  -- set to true once your server is running
+            visible = true,   -- set to false to hide it from the engine selector
         },
         google_api = {
             -- DEPRECATED: Google discontinued "entire web" search for new users.

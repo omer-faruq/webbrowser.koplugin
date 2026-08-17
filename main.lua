@@ -2242,50 +2242,81 @@ function WebBrowser:showKiwixSettings()
         return
     end
 
-    local fields = {
-        {
-            text = config.base_url or "http://localhost:8888",
-            hint = _("Server address (e.g. http://localhost:8888)"),
-            input_type = "string",
-        },
-        {
-            text = config.book_name or "",
-            hint = _("Archive name, without .zim (empty = search all)"),
-            input_type = "string",
-        },
-    }
+    local base_url = config.base_url or "http://localhost:8888"
+    local archive_label = config.book_name
+    if not archive_label or archive_label == "" then
+        archive_label = _("All archives")
+    end
 
     local settings_dialog
-    settings_dialog = MultiInputDialog:new {
-        title = _("Kiwix Settings"),
-        fields = fields,
+    settings_dialog = ButtonDialog:new {
+        title = string.format(_("Kiwix Settings\n\nServer: %s\nArchive: %s"), base_url, archive_label),
         buttons = {
             {
                 {
-                    text = _("Cancel"),
+                    text = _("Change Server Address"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    callback = function()
+                        UIManager:close(settings_dialog)
+                        self:showKiwixServerDialog()
+                    end,
+                },
+            },
+            {
+                {
+                    text = _("Select Archive"),
+                    background = Blitbuffer.COLOR_WHITE,
+                    callback = function()
+                        UIManager:close(settings_dialog)
+                        self:showKiwixArchiveSelector()
+                    end,
+                },
+            },
+            {
+                {
+                    text = _("Close"),
                     background = Blitbuffer.COLOR_WHITE,
                     callback = function()
                         UIManager:close(settings_dialog)
                     end,
                 },
+            },
+        },
+    }
+    UIManager:show(settings_dialog)
+end
+
+function WebBrowser:showKiwixServerDialog()
+    local config, engine_name = self:getSearchEngineConfig()
+    if not config then
+        return
+    end
+
+    local server_dialog
+    server_dialog = InputDialog:new {
+        title = _("Kiwix Server Address"),
+        input = config.base_url or "http://localhost:8888",
+        input_hint = "http://localhost:8888",
+        description = _("Address of the kiwix-serve instance. Use localhost when the server runs on this device."),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(server_dialog)
+                    end,
+                },
                 {
                     text = _("Save"),
-                    background = Blitbuffer.COLOR_WHITE,
                     is_enter_default = true,
                     callback = function()
-                        local values = settings_dialog:getFields()
-
-                        local new_base_url = trim_text(values[1] or "")
-                        if new_base_url ~= "" then
-                            config.base_url = new_base_url
+                        local new_base_url = trim_text(server_dialog:getInputText() or "")
+                        UIManager:close(server_dialog)
+                        if new_base_url == "" then
+                            return
                         end
-
-                        -- an empty archive name means "search the whole library"
-                        local new_book = trim_text(values[2] or ""):gsub("%.zim$", "")
-                        config.book_name = new_book ~= "" and new_book or nil
-
+                        config.base_url = new_base_url
                         self:saveSettings(engine_name)
-                        UIManager:close(settings_dialog)
                         UIManager:show(InfoMessage:new {
                             text = _("Settings saved successfully"),
                             timeout = 2,
@@ -2295,8 +2326,104 @@ function WebBrowser:showKiwixSettings()
             },
         },
     }
-    UIManager:show(settings_dialog)
-    settings_dialog:onShowKeyboard()
+    UIManager:show(server_dialog)
+    server_dialog:onShowKeyboard()
+end
+
+function WebBrowser:showKiwixArchiveSelector()
+    local config, engine_name = self:getSearchEngineConfig()
+    if not config then
+        return
+    end
+
+    local engine = SearchEngines.kiwix
+    if not engine or not engine.list_archives then
+        return
+    end
+
+    local info = InfoMessage:new {
+        text = _("Reading archive list…"),
+        timeout = 0,
+    }
+    UIManager:show(info)
+    local archives, err = engine.list_archives(config)
+    UIManager:close(info)
+
+    if not archives then
+        UIManager:show(InfoMessage:new {
+            text = err or _("Could not read the archive list."),
+            timeout = 5,
+        })
+        return
+    end
+
+    local current = config.book_name
+    local selector_dialog
+
+    local function choose(name)
+        config.book_name = name
+        self:saveSettings(engine_name)
+        UIManager:close(selector_dialog)
+        UIManager:show(InfoMessage:new {
+            text = _("Settings saved successfully"),
+            timeout = 2,
+        })
+    end
+
+    -- an empty archive name means "search everything the server has loaded"
+    local all_selected = (not current or current == "")
+    local buttons = {
+        {
+            {
+                text = all_selected and ("✓ " .. _("All archives")) or _("All archives"),
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    choose(nil)
+                end,
+            },
+        },
+    }
+
+    for _, archive in ipairs(archives) do
+        local label = archive.title ~= "" and archive.title or archive.name
+        local details = {}
+        if archive.language and archive.language ~= "" then
+            table.insert(details, archive.language)
+        end
+        if archive.article_count then
+            table.insert(details, string.format(_("%d articles"), archive.article_count))
+        end
+        if #details > 0 then
+            label = string.format("%s (%s)", label, table.concat(details, ", "))
+        end
+        if archive.name == current then
+            label = "✓ " .. label
+        end
+
+        table.insert(buttons, {
+            {
+                text = label,
+                background = Blitbuffer.COLOR_WHITE,
+                callback = function()
+                    choose(archive.name)
+                end,
+            },
+        })
+    end
+
+    if #archives == 0 then
+        UIManager:show(InfoMessage:new {
+            text = _("The server has no archives loaded."),
+            timeout = 4,
+        })
+        return
+    end
+
+    selector_dialog = ButtonDialog:new {
+        title = _("Select Archive"),
+        buttons = buttons,
+    }
+    UIManager:show(selector_dialog)
 end
 
 function WebBrowser:showTavilySettings()
@@ -2839,14 +2966,18 @@ function WebBrowser:buildResultMenuEntry(result, engine_name)
     local raw_url = result.url or result.source_url or result.gateway_url
     local normalized_url = raw_url and Utils.decode_result_url(raw_url)
     normalized_url = normalized_url and trim_text(normalized_url) or ""
-    if normalized_url ~= "" then
+    -- Every kiwix hit lives on the same local server, so the URL would just
+    -- repeat "http://localhost:8888/content/..." on every row; the archive
+    -- name already went into sub_text above.
+    local show_url = engine_name ~= "kiwix"
+    if show_url and normalized_url ~= "" then
         if display_text and display_text ~= "" then
             display_text = string.format("%s — %s", display_text, normalized_url)
         else
             display_text = normalized_url
         end
     elseif not display_text or display_text == "" then
-        display_text = raw_url or ""
+        display_text = normalized_url ~= "" and normalized_url or (raw_url or "")
     end
 
     return {

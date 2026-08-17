@@ -63,15 +63,20 @@ still needed and the power saving is lost.
 
 ### 3. Configure the plugin
 
-Set `visible = true` on the `kiwix` profile in your configuration file, adjust `base_url`
-if you changed the port, then pick **Kiwix (offline)** in
-Tools → Web Browser → Settings → Select Search Engine. The address and archive can also be
-changed at runtime from **Configure Settings**.
+Pick **Kiwix (offline)** in Tools → Web Browser → Settings → Select Search Engine, then
+open **Configure Settings**:
 
-`book_name` must be the **file name kiwix-serve was started with**, without `.zim` — not
-the name stored inside the archive. Getting it wrong makes the server reply `HTTP 400`; the
-plugin notices and falls back to searching every loaded archive. Leaving it empty selects
-that whole-library behaviour on purpose.
+- **Change Server Address** — only needed if the server is not on `http://localhost:8888`.
+- **Select Archive** — reads the server's catalogue and lists what it actually has loaded,
+  with language and article count, so nothing has to be typed from memory. Choosing **All
+  archives** searches everything at once.
+
+If you would rather set it in the configuration file, `book_name` accepts either spelling
+the server understands: the **file name kiwix-serve was started with**
+(`wikipedia_en_100_mini_2026-07`) or the name its **catalogue reports**
+(`wikipedia_en_100`). These are two separate namespaces in `kiwix-serve` and each rejects
+the other with `HTTP 400`, so the plugin tries both and remembers which one worked. A name
+matching neither falls back to searching every loaded archive, as does leaving it empty.
 
 **Load more** works as it does for the other engines: `kiwix-serve` reports the full hit
 count, so the button stays active until every match has been listed, `max_results` at a
