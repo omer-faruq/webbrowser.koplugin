@@ -623,7 +623,7 @@ function WebBrowser:showSearchHistoryDialog()
     else
         local threshold_rows = 10
         local history_group = VerticalGroup:new{}
-        for _, entry in ipairs(entries) do
+        for _i, entry in ipairs(entries) do
             local entry_id = entry and entry.id
             if entry_id then
                 selection[entry_id] = false
@@ -2384,7 +2384,7 @@ function WebBrowser:showKiwixArchiveSelector()
         },
     }
 
-    for _, archive in ipairs(archives) do
+    for _i, archive in ipairs(archives) do
         local label = archive.title ~= "" and archive.title or archive.name
         local details = {}
         if archive.language and archive.language ~= "" then
@@ -4313,7 +4313,7 @@ function WebBrowser:showEditBookmarkDialog(parent_dialog, clearDialogCallback, e
 
                         local normalized_input = Utils.ensure_markdown_gateway(url_input)
 
-                        for _, existing in ipairs(bookmarks) do
+                        for _i, existing in ipairs(bookmarks) do
                             if existing and existing.id and existing.id ~= entry.id then
                                 local existing_source = existing.source_url or existing.gateway_url or existing.url
                                 local normalized_existing_source = existing_source and Utils.ensure_markdown_gateway(existing_source)
@@ -4728,7 +4728,7 @@ function WebBrowser:showBookmarksDialog(filter_text)
         end
 
         local bookmarks_group = VerticalGroup:new{}
-        for _, entry in ipairs(visible_bookmarks) do
+        for _i, entry in ipairs(visible_bookmarks) do
             local id = entry.id
             local title = entry.title
             if not title or title == "" then
@@ -5095,7 +5095,7 @@ function WebBrowser:showWebsiteHistoryDialog(filter_text)
         end
 
         local history_group = VerticalGroup:new{}
-        for _, entry in ipairs(visible_entries) do
+        for _i, entry in ipairs(visible_entries) do
             local id = entry.id
             selection[id] = selection[id] or false
 
