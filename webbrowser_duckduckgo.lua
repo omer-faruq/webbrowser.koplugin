@@ -1,5 +1,5 @@
 local HtmlParser = require("htmlparser")
-local socket_http = require("socket.http")
+local WebBrowserHttp = require("webbrowser_http")
 local socket_url = require("socket.url")
 local socket = require("socket")
 local ltn12 = require("ltn12")
@@ -30,7 +30,7 @@ local function fetch(url, timeout, maxtime, accept_language)
         headers = headers
     }
 
-    local code, response_headers, status = socket.skip(1, socket_http.request(request))
+    local code, response_headers, status = socket.skip(1, WebBrowserHttp.request(request))
     socketutil:reset_timeout()
 
     if not code then

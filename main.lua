@@ -20,7 +20,7 @@ local FileManager = require("apps/filemanager/filemanager")
 local FileManagerUtil = require("apps/filemanager/filemanagerutil")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
-local socket_http = require("socket.http")
+local WebBrowserHttp = require("webbrowser_http")
 local socket = require("socket")
 local socketutil = require("socketutil")
 local ltn12 = require("ltn12")
@@ -1472,7 +1472,7 @@ fetch_markdown = function(url)
         },
     }
 
-    local code, headers, status = socket.skip(1, socket_http.request(request))
+    local code, headers, status = socket.skip(1, WebBrowserHttp.request(request))
     socketutil:reset_timeout()
 
     if not code then

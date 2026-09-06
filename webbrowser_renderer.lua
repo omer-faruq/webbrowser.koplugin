@@ -1,6 +1,6 @@
 local DataStorage = require("datastorage")
 local lfs = require("libs/libkoreader-lfs")
-local socket_http = require("socket.http")
+local WebBrowserHttp = require("webbrowser_http")
 local socketutil = require("socketutil")
 local ltn12 = require("ltn12")
 local urlmod = require("socket.url")
@@ -159,7 +159,7 @@ local function fetchUrl(url, timeout, maxtime, redirect_count, request_headers)
         ["user-agent"] = "Mozilla/5.0 (compatible; KOReader)",
     }
     socketutil:set_timeout(timeout or DEFAULT_TIMEOUT, maxtime or DEFAULT_MAXTIME)
-    local ok, code, headers, status = socket_http.request{
+    local ok, code, headers, status = WebBrowserHttp.request{
         url = url,
         method = "GET",
         sink = ltn12.sink.table(chunks),
@@ -541,7 +541,8 @@ function MuPDFRenderer:fetchAndStore(url)
 
     local ok, body, headers_or_err = fetchUrl(url, self.timeout, self.maxtime)
     if not ok then
-        return false, headers_or_err
+        -- fetchUrl reports failures as (false, err), so the reason is in body.
+        return false, body or headers_or_err
     end
 
     local headers = type(headers_or_err) == "table" and headers_or_err or {}

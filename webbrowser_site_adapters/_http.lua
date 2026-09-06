@@ -1,6 +1,6 @@
 -- Shared HTTP helper for site adapters.
 --
--- Wraps KOReader's socket.http with sensible defaults, automatic redirect
+-- Wraps the plugin's HTTP client with sensible defaults, automatic redirect
 -- following and a friendlier API for GET/POST. Adapters may use this helper
 -- for any extra HTTP requests they need to perform (e.g. AJAX endpoints that
 -- the page would normally hit from JavaScript).
@@ -9,7 +9,7 @@
 --   ok, body, headers   - on success (2xx)
 --   false, err          - on failure or non-2xx final response
 
-local socket_http = require("socket.http")
+local WebBrowserHttp = require("webbrowser_http")
 local socketutil = require("socketutil")
 local ltn12 = require("ltn12")
 local urlmod = require("socket.url")
@@ -80,7 +80,7 @@ local function do_request(opts, redirect_count)
 
     local chunks = {}
     socketutil:set_timeout(opts.timeout or DEFAULT_TIMEOUT, opts.maxtime or DEFAULT_MAXTIME)
-    local ok, code, resp_headers, status = socket_http.request{
+    local ok, code, resp_headers, status = WebBrowserHttp.request{
         url = url,
         method = method,
         sink = ltn12.sink.table(chunks),

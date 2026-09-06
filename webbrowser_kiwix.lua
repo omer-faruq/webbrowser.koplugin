@@ -7,7 +7,7 @@
 --
 -- Endpoint reference: https://kiwix-tools.readthedocs.io/en/latest/kiwix-serve.html
 
-local socket_http = require("socket.http")
+local WebBrowserHttp = require("webbrowser_http")
 local socket_url = require("socket.url")
 local socket = require("socket")
 local ltn12 = require("ltn12")
@@ -30,7 +30,7 @@ local function fetch(url, timeout, maxtime)
     local response_chunks = {}
     socketutil:set_timeout(timeout or DEFAULT_TIMEOUT, maxtime or DEFAULT_MAXTIME)
 
-    local code, _, status = socket.skip(1, socket_http.request {
+    local code, _, status = socket.skip(1, WebBrowserHttp.request {
         url = url,
         method = "GET",
         sink = ltn12.sink.table(response_chunks),
